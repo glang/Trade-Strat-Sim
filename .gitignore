@@ -1,0 +1,19 @@
+# .env file for API keys and sensitive information
+.env
+
+# Cache files
+market_days_cache.json
+smart_stock_cache.json
+
+# Python virtual environment
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Log files
+*.log
+
+# Backup files
+*.bak
