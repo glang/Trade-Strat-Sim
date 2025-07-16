@@ -404,43 +404,103 @@ python3 market_days_cache.py  # Populate cache
 - **Performance:** Down -58.3% ($28.90 → $12.05 as of July 9)
 - **Auto-Update:** Position value updates with most recent trading day data
 
-## 🚀 How to Run a Complete Backtest
+## 🚀 Getting Started: A Guide for New Agents
 
-### **1. System Startup (Auto-Start Enabled)**
-```bash
-# ThetaTerminal will start automatically when running backtests
-# No manual startup required!
+This guide provides everything a new AI agent needs to set up and run this backtesting project from a fresh clone of the repository.
 
-# Optional: Verify connection manually
-curl -s "http://localhost:25510/v2/system/mdds/status"
-```
+### **1. Environment Setup**
 
-### **2. Initialize Market Days Cache (One-Time)**
-```bash
-# Populate market days cache
-python3 market_days_cache.py
+**a. Create the Environment File:**
 
-# Expected: 2,396 trading days across 10 years cached
-```
+This project requires API keys and credentials, which are stored in a `.env` file. A template is provided in the repository.
 
-### **3. Execute Backtest**
-```bash
-# Run complete backtest (ThetaTerminal starts automatically)
-python3 accurate_optimized_leaps.py
+1.  Navigate to the `mcp-trader` directory.
+2.  Copy the example environment file:
 
-# Expected output: 
-# 🚀 Starting ThetaTerminal... (if not running)
-# ✅ ThetaTerminal connected successfully
-# 📅 Testing years: 2016 to 2025 (10 years)
-# 📅 Most recent trading day: GOOG 20250709 (for current year)
-# 10 years analyzed, ~20 seconds execution time
-```
+    ```bash
+    cp .env.example .env
+    ```
 
-### **4. Results Interpretation**
-- **Success Rate:** Percentage of years with tradeable LEAPS
-- **Win Rate:** Percentage of successful years with positive returns
-- **Average Return:** Mean return across successful years
-- **API Efficiency:** ~5 calls per year vs 12+ in original
+3.  **Edit the `.env` file** and add your credentials:
+
+    ```
+    THETADATA_PASSWORD=your_theatadata_password_here
+    TIINGO_API_KEY=your_tiingo_api_key_here
+    ```
+
+**b. Install Dependencies:**
+
+The project uses `uv` to manage Python packages. All required libraries are listed in the `pyproject.toml` file.
+
+1.  Ensure `uv` is installed. If not, you can typically install it with `pip`:
+
+    ```bash
+    pip install uv
+    ```
+
+2.  From the `mcp-trader` directory, create a virtual environment and install the dependencies:
+
+    ```bash
+    uv venv
+    uv pip install -r requirements.txt
+    ```
+
+**c. Set Executable Permissions:**
+
+The script that automatically starts the ThetaData terminal needs to be executable.
+
+1.  From the `mcp-trader` directory, grant execute permissions to the `start_theta.sh` script:
+
+    ```bash
+    chmod +x start_theta.sh
+    ```
+
+### **2. How to Run a Complete Backtest**
+
+With the environment now fully configured, you can run the backtest. The process is designed to be highly automated.
+
+**a. System Startup (Auto-Start Enabled)**
+
+There is no need to start the ThetaTerminal manually. The backtesting script will automatically check if it's running and start it if necessary.
+
+*   **Optional:** To verify the connection manually after the script has started, you can use this command:
+
+    ```bash
+    curl -s "http://localhost:25510/v2/system/mdds/status"
+    ```
+
+**b. Initialize Market Days Cache (One-Time Setup)**
+
+The first time you run the backtest, you must populate the market days cache. This is a one-time operation, as historical market data does not change.
+
+*   Run the following command from the `mcp-trader` directory:
+
+    ```bash
+    python3 market_days_cache.py
+    ```
+
+    You should see output indicating that thousands of trading days have been cached.
+
+**c. Execute the Backtest**
+
+You are now ready to run the main backtesting script.
+
+*   From the `mcp-trader` directory, execute the following command:
+
+    ```bash
+    python3 accurate_optimized_leaps.py
+    ```
+
+*   **Expected Output:** The script will first check for ThetaTerminal and start it if needed. It will then proceed to analyze each year from 2016 to the present, running both the Annual and Quarterly strategies. Finally, it will display a detailed, side-by-side comparison of the results.
+
+### **3. Results Interpretation**
+
+The final output will be a table comparing the two primary strategies:
+
+*   **Annual Strategy:** A simple buy-and-hold approach.
+*   **Quarterly Rolling Strategy:** A more active strategy that rolls the LEAP option every quarter.
+
+The table will include the total return, a breakdown of winning vs. losing trades, and key Greek metrics (like Delta and IV) to provide deeper insight into the performance of each strategy.
 
 ## 🔧 Extending the System
 
