@@ -33,10 +33,10 @@ This is a comprehensive **January LEAPS (Long-term Equity Anticipation Securitie
 - **API Integration:** HTTP REST API via ThetaTerminal (localhost:25510)
 - **Auto-Start:** Automatic ThetaTerminal health check and startup integration
 
-#### **Tiingo (Stock Price Verification) - Free Tier**
+#### **Tiingo (Stock Price Verification) - Paid Tier**
 - **Purpose:** Stock price verification and entry day validation
 - **Coverage:** Full historical stock data for major symbols
-- **Cost:** Free (1000 requests/day limit)
+- **Cost:** Paid subscription (generous rate limits)
 - **API Integration:** Direct HTTP API calls with authentication token
 
 ### **Market Days Detection Strategy**
@@ -352,9 +352,7 @@ python3 market_days_cache.py  # Populate cache
 **Symptoms:** $0.00 prices rejected as invalid
 **Solution:** Accept $0.00 as legitimate worthless option value
 
-### **5. API Rate Limiting**
-**Symptoms:** Timeouts, connection errors
-**Solution:** Built-in delays, efficient bulk API usage
+
 
 ## 📈 Backtest Results & Performance
 
