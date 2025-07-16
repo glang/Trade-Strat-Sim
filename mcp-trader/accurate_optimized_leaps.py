@@ -137,7 +137,6 @@ def ensure_theta_terminal_running():
             pass
         if i % 5 == 0 and i > 0:  # Progress update every 5 seconds
             print(f"⏳ Waiting for ThetaTerminal to connect... ({i}s)")
-        time.sleep(1)
     
     print("❌ Failed to start ThetaTerminal after 30 seconds")
     print("💡 Please check ThetaTerminal credentials and try again")
