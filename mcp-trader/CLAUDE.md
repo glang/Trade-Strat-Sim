@@ -422,68 +422,74 @@ This guide provides everything a new AI agent needs to set up and run this backt
 
 ### **1. Environment Setup**
 
-**a. Create the Environment File:**
+**a. Prerequisites:**
 
-This project requires API keys and credentials, which are stored in a `.env` file. A template is provided in the repository.
-
-1.  Navigate to the `mcp-trader` directory.
-2.  Copy the example environment file:
-
+*   **Python 3.11+**: Ensure a recent version of Python is installed.
     ```bash
-    cp .env.example .env
+    python3 --version
+    ```
+*   **Java Development Kit (JDK)**: The ThetaData terminal is a Java application.
+    ```bash
+    java -version
+    ```
+    If Java is not installed, use a package manager like Homebrew (`brew install openjdk`) or download it directly.
+
+**b. Create the Environment File:**
+
+This project requires API keys and credentials, which are stored in a `.env` file in the **project's root directory**.
+
+1.  From the project's root directory, copy the example environment file:
+    ```bash
+    cp mcp-trader/.env.example .env
     ```
 
-3.  **Edit the `.env` file** and add your credentials:
-
+2.  **Edit the new `.env` file** in the root directory and add your credentials:
     ```
     THETADATA_USERNAME=your_thetadata_username_here
     THETADATA_PASSWORD=your_thetadata_password_here
     TIINGO_API_KEY=your_tiingo_api_key_here
     ```
 
-**b. Install Dependencies:**
+**c. Install Dependencies:**
 
 The project uses `uv` to manage Python packages. All required libraries are listed in the `pyproject.toml` file.
 
-**Prerequisites:** Ensure you have Python 3.11 or higher installed:
-
-```bash
-python3 --version
-```
+**Primary Method (using `uv`):**
 
 1.  Ensure `uv` is installed. If not, you can typically install it with `pip`:
-
     ```bash
-    pip install uv
+    pip3 install uv
     ```
 
 2.  From the `mcp-trader` directory, create a virtual environment and install the dependencies:
-
     ```bash
     uv venv
     source .venv/bin/activate
     uv pip install -e .
     ```
 
-**c. Set Executable Permissions:**
+**Alternative Method (using `pip`):**
+
+If you encounter issues with `uv` (e.g., due to security software), you can install the necessary packages directly with `pip`.
+
+1.  From the `mcp-trader` directory, install the packages:
+    ```bash
+    pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.14b" "python-dotenv>=1.0.1" "thetadata==0.9.11" "yfinance>=0.2.63" "python-dateutil>=2.8.2" "requests"
+    ```
+    *Note: This list excludes `fastmcp` and `ta-lib`, which are not required for the `accurate_optimized_leaps.py` backtest.*
+
+**d. Set Executable Permissions:**
 
 The script that automatically starts the ThetaData terminal needs to be executable.
 
 1.  From the `mcp-trader` directory, grant execute permissions to the `start_theta.sh` script:
-
     ```bash
     chmod +x start_theta.sh
     ```
 
-**d. ThetaTerminal Installation:**
+**e. ThetaTerminal Startup:**
 
-The ThetaTerminal Java application is required for API access and is included in the repository as `ThetaTerminal.jar`. No additional installation is needed, but ensure Java is available on your system:
-
-```bash
-java -version
-```
-
-If Java is not installed, install it using your system's package manager (e.g., `apt install openjdk-11-jre` on Ubuntu).
+The ThetaTerminal Java application (`ThetaTerminal.jar`) is included in the repository. The `start_theta.sh` script, which was updated to securely load your credentials from the `.env` file, handles its execution. No further setup is required.
 
 ### **2. How to Run a Complete Backtest**
 
