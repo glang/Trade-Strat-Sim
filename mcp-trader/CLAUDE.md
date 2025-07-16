@@ -65,7 +65,8 @@ curl -s "http://localhost:25510/v2/list/expirations?root=GOOG"
 
 #### **2. Environment Configuration**
 ```bash
-# Required in .env file (now located in the project root: ~/trade-strat-sim/.env)
+# Required in .env file (created from .env.example)
+THETADATA_USERNAME=your_username_here
 THETADATA_PASSWORD=your_password_here
 TIINGO_API_KEY=your_api_key_here
 ```
@@ -352,6 +353,17 @@ python3 market_days_cache.py  # Populate cache
 **Symptoms:** $0.00 prices rejected as invalid
 **Solution:** Accept $0.00 as legitimate worthless option value
 
+### **5. Missing Required Files After Fresh Clone**
+**Symptoms:** ImportError or FileNotFoundError for dependencies
+**Required Files Checklist:**
+- `.env` file (copy from `.env.example` and configure)
+- `ThetaTerminal.jar` (should be included in repository)
+- `smart_leaps_backtest.py` (should be included in repository)
+- `market_days_cache.py` (should be included in repository)
+- Python 3.11+ with all dependencies from `pyproject.toml`
+
+**Solution:** Verify all files are present and follow setup steps in order
+
 
 
 ## 📈 Backtest Results & Performance
@@ -424,13 +436,20 @@ This project requires API keys and credentials, which are stored in a `.env` fil
 3.  **Edit the `.env` file** and add your credentials:
 
     ```
-    THETADATA_PASSWORD=your_theatadata_password_here
+    THETADATA_USERNAME=your_thetadata_username_here
+    THETADATA_PASSWORD=your_thetadata_password_here
     TIINGO_API_KEY=your_tiingo_api_key_here
     ```
 
 **b. Install Dependencies:**
 
 The project uses `uv` to manage Python packages. All required libraries are listed in the `pyproject.toml` file.
+
+**Prerequisites:** Ensure you have Python 3.11 or higher installed:
+
+```bash
+python3 --version
+```
 
 1.  Ensure `uv` is installed. If not, you can typically install it with `pip`:
 
@@ -442,7 +461,8 @@ The project uses `uv` to manage Python packages. All required libraries are list
 
     ```bash
     uv venv
-    uv pip install -r requirements.txt
+    source .venv/bin/activate
+    uv pip install -e .
     ```
 
 **c. Set Executable Permissions:**
@@ -454,6 +474,16 @@ The script that automatically starts the ThetaData terminal needs to be executab
     ```bash
     chmod +x start_theta.sh
     ```
+
+**d. ThetaTerminal Installation:**
+
+The ThetaTerminal Java application is required for API access and is included in the repository as `ThetaTerminal.jar`. No additional installation is needed, but ensure Java is available on your system:
+
+```bash
+java -version
+```
+
+If Java is not installed, install it using your system's package manager (e.g., `apt install openjdk-11-jre` on Ubuntu).
 
 ### **2. How to Run a Complete Backtest**
 
@@ -481,6 +511,8 @@ The first time you run the backtest, you must populate the market days cache. Th
 
     You should see output indicating that thousands of trading days have been cached.
 
+**Important:** If you cloned this repository from GitHub, the cache files (`market_days_cache.json` and `smart_stock_cache.json`) may not be present as they are typically excluded from version control. The above command will create the necessary cache files on first run.
+
 **c. Execute the Backtest**
 
 You are now ready to run the main backtesting script.
@@ -492,6 +524,8 @@ You are now ready to run the main backtesting script.
     ```
 
 *   **Expected Output:** The script will first check for ThetaTerminal and start it if needed. It will then proceed to analyze each year from 2016 to the present, running both the Annual and Quarterly strategies. Finally, it will display a detailed, side-by-side comparison of the results.
+
+**Important Note**: The script requires the `smart_leaps_backtest.py` file to be present for import functions like `get_stock_price_with_smart_fallback` and `analyze_smart_cache`. This dependency is automatically included in the repository.
 
 ### **3. Results Interpretation**
 
