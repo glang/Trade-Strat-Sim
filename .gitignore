@@ -17,3 +17,9 @@ __pycache__/
 
 # Backup files
 *.bak
+
+# Temporary scripts
+gitpush.sh
+
+# macOS system files
+.DS_Store
