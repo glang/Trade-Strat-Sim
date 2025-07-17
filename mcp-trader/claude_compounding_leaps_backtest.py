@@ -46,7 +46,7 @@ from accurate_optimized_leaps import (
 
 # Constants
 DEFAULT_STARTING_CAPITAL = 100000.0
-COMMISSION_PER_CONTRACT = 0.65  # Realistic commission cost
+COMMISSION_PER_CONTRACT = 0.35  # Realistic commission cost
 MAX_CONTRACTS_PER_TRADE = 500  # Liquidity constraint
 TARGET_CAPITAL_UTILIZATION = 0.95  # Use 95% of capital
 SYMBOL = "GOOG"
@@ -128,7 +128,8 @@ def calculate_exit_proceeds(num_contracts: int, exit_price_per_contract: float,
 
 def analyze_year_compounding_annual(year: int, starting_capital: float, 
                                   commission_per_contract: float = COMMISSION_PER_CONTRACT,
-                                  max_contracts_per_trade: int = MAX_CONTRACTS_PER_TRADE) -> Dict[str, Any]:
+                                  max_contracts_per_trade: int = MAX_CONTRACTS_PER_TRADE,
+                                  quiet: bool = True) -> Dict[str, Any]:
     """
     Analyze a single year using the Compounding Annual Strategy.
     
@@ -137,15 +138,11 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
     Args:
         year: Year to analyze
         starting_capital: Starting capital for the year
+        quiet: If True, suppress verbose output
         
     Returns:
         Dict containing year's performance results
     """
-    # Suppress all output except final results
-    import sys
-    from io import StringIO
-    old_stdout = sys.stdout
-    sys.stdout = StringIO()
     
     # Get entry and exit dates for the year
     entry_date = get_first_trading_day_of_year(SYMBOL, year)
@@ -159,7 +156,6 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
     
     if not entry_date or not exit_date:
         error_msg = f"Could not determine entry ({entry_date}) or exit ({exit_date}) dates"
-        sys.stdout = old_stdout
         return {
             'year': year,
             'strategy': 'Annual Compounding',
@@ -177,7 +173,6 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
     stock_price = get_stock_price_with_smart_fallback(SYMBOL, entry_date)
     if not stock_price:
         error_msg = f"Could not get stock price for {entry_date}"
-        sys.stdout = old_stdout
         return {
             'year': year,
             'strategy': 'Annual Compounding',
@@ -191,15 +186,15 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
             'trade_details': None
         }
     
-    print(f"📅 Entry: {entry_date}, Exit: {exit_date}")
-    print(f"📊 Stock Price: ${stock_price:.2f}")
+    if not quiet:
+        print(f"📅 Entry: {entry_date}, Exit: {exit_date}")
+        print(f"📊 Stock Price: ${stock_price:.2f}")
     
     # Get the optimal annual January LEAPS trade
     annual_result = find_optimal_leaps_annual_january(SYMBOL, year, entry_date, exit_date, stock_price)
     
     if not annual_result or annual_result.get('error'):
         error_msg = annual_result.get('error', 'Unknown error') if annual_result else 'No trade data available'
-        sys.stdout = old_stdout
         return {
             'year': year,
             'strategy': 'Annual Compounding',
@@ -219,7 +214,6 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
     
     if position_info['error'] or position_info['num_contracts'] == 0:
         error_msg = position_info['error'] or 'No contracts can be purchased'
-        sys.stdout = old_stdout
         return {
             'year': year,
             'strategy': 'Annual Compounding',
@@ -241,9 +235,6 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
     final_capital = exit_info['net_proceeds'] + position_info['leftover_cash']
     yearly_return_pct = ((final_capital - starting_capital) / starting_capital) * 100
     
-    # Restore stdout
-    sys.stdout = old_stdout
-    
     return {
         'year': year,
         'strategy': 'Annual Compounding',
@@ -263,7 +254,8 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
 
 def analyze_year_compounding_quarterly(year: int, starting_capital: float,
                                      commission_per_contract: float = COMMISSION_PER_CONTRACT,
-                                     max_contracts_per_trade: int = MAX_CONTRACTS_PER_TRADE) -> Dict[str, Any]:
+                                     max_contracts_per_trade: int = MAX_CONTRACTS_PER_TRADE,
+                                     quiet: bool = True) -> Dict[str, Any]:
     """
     Analyze a single year using the Compounding Quarterly Rolling Strategy.
     
@@ -272,15 +264,11 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
     Args:
         year: Year to analyze
         starting_capital: Starting capital for the year
+        quiet: If True, suppress verbose output
         
     Returns:
         Dict containing year's performance results
     """
-    # Suppress all output except final results
-    import sys
-    from io import StringIO
-    old_stdout = sys.stdout
-    sys.stdout = StringIO()
     
     available_capital = starting_capital
     quarterly_trades = []
@@ -288,7 +276,8 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
     
     # Execute quarterly trades
     for quarter in range(1, 5):
-        print(f"\n📅 Quarter {quarter} - Available Capital: ${available_capital:,.2f}")
+        if not quiet:
+            print(f"\n📅 Quarter {quarter} - Available Capital: ${available_capital:,.2f}")
         
         # Get entry and exit dates for the quarter
         entry_date = get_first_trading_day_of_quarter(SYMBOL, year, quarter)
@@ -296,7 +285,8 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         
         if not entry_date or not exit_date:
             error_msg = f"Could not determine Q{quarter} dates: entry={entry_date}, exit={exit_date}"
-            print(f"❌ Q{quarter} Date Error: {error_msg}")
+            if not quiet:
+                print(f"❌ Q{quarter} Date Error: {error_msg}")
             quarterly_trades.append({
                 'quarter': quarter,
                 'available_capital': available_capital,
@@ -310,7 +300,8 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         stock_price = get_stock_price_with_smart_fallback(SYMBOL, entry_date)
         if not stock_price:
             error_msg = f"Could not get stock price for {entry_date}"
-            print(f"❌ Q{quarter} Stock Price Error: {error_msg}")
+            if not quiet:
+                print(f"❌ Q{quarter} Stock Price Error: {error_msg}")
             quarterly_trades.append({
                 'quarter': quarter,
                 'available_capital': available_capital,
@@ -320,15 +311,17 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
             })
             continue
         
-        print(f"📅 Q{quarter} Entry: {entry_date}, Exit: {exit_date}")
-        print(f"📊 Stock Price: ${stock_price:.2f}")
+        if not quiet:
+            print(f"📅 Q{quarter} Entry: {entry_date}, Exit: {exit_date}")
+            print(f"📊 Stock Price: ${stock_price:.2f}")
         
         # Get the quarterly trade
         quarterly_result = execute_single_quarterly_trade(SYMBOL, entry_date, exit_date, stock_price)
         
         if not quarterly_result or quarterly_result.get('error'):
             error_msg = quarterly_result.get('error', 'Unknown error') if quarterly_result else 'No trade data available'
-            print(f"❌ Q{quarter} Trade Failed: {error_msg}")
+            if not quiet:
+                print(f"❌ Q{quarter} Trade Failed: {error_msg}")
             
             # Record failed trade
             quarterly_trades.append({
@@ -346,7 +339,8 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         
         if position_info['error'] or position_info['num_contracts'] == 0:
             error_msg = position_info['error'] or 'No contracts can be purchased'
-            print(f"❌ Q{quarter} Position Sizing Failed: {error_msg}")
+            if not quiet:
+                print(f"❌ Q{quarter} Position Sizing Failed: {error_msg}")
             
             quarterly_trades.append({
                 'quarter': quarter,
@@ -369,12 +363,13 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         trade_commissions = position_info['total_commission'] + exit_info['exit_commission']
         total_commissions += trade_commissions
         
-        print(f"   Entry: {entry_date} @ ${entry_price:.2f}")
-        print(f"   Exit:  {exit_date} @ ${exit_price:.2f}")
-        print(f"   Contracts: {position_info['num_contracts']:,}")
-        print(f"   Capital Utilization: {position_info['capital_utilization']:.1f}%")
-        print(f"   Trade Return: {trade_return_pct:+.1f}%")
-        print(f"   New Capital: ${new_available_capital:,.2f}")
+        if not quiet:
+            print(f"   Entry: {entry_date} @ ${entry_price:.2f}")
+            print(f"   Exit:  {exit_date} @ ${exit_price:.2f}")
+            print(f"   Contracts: {position_info['num_contracts']:,}")
+            print(f"   Capital Utilization: {position_info['capital_utilization']:.1f}%")
+            print(f"   Trade Return: {trade_return_pct:+.1f}%")
+            print(f"   New Capital: ${new_available_capital:,.2f}")
         
         # Record trade details
         quarterly_trades.append({
@@ -398,9 +393,6 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
     # Calculate final results
     final_capital = available_capital
     yearly_return_pct = ((final_capital - starting_capital) / starting_capital) * 100
-    
-    # Restore stdout
-    sys.stdout = old_stdout
     
     return {
         'year': year,
@@ -557,11 +549,11 @@ def main():
         print(f"Processing {year}...", end=" ")
         
         # Run annual compounding strategy
-        annual_result = analyze_year_compounding_annual(year, args.capital, commission_per_contract, max_contracts_per_trade)
+        annual_result = analyze_year_compounding_annual(year, args.capital, commission_per_contract, max_contracts_per_trade, quiet=True)
         all_results.append(annual_result)
         
         # Run quarterly rolling compounding strategy
-        quarterly_result = analyze_year_compounding_quarterly(year, args.capital, commission_per_contract, max_contracts_per_trade)
+        quarterly_result = analyze_year_compounding_quarterly(year, args.capital, commission_per_contract, max_contracts_per_trade, quiet=True)
         all_results.append(quarterly_result)
         
         print("✓")
