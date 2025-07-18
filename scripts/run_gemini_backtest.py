@@ -116,6 +116,8 @@ def get_option_prices(symbol: str, option_details: Dict[str, Any], entry_date: s
 
 # --- Main Analysis Functions ---
 
+COMMISSION_PER_CONTRACT = 0.35
+
 def analyze_year_compounding_annual(year: int, starting_capital: float, quiet: bool = False) -> Optional[Dict[str, Any]]:
     """
     Analyzes the Compounding Annual Strategy for a single year.
@@ -147,16 +149,17 @@ def analyze_year_compounding_annual(year: int, starting_capital: float, quiet: b
         if not quiet: print("❌ Invalid entry price of zero. Trade skipped.")
         return None
 
-    num_contracts = floor(starting_capital / entry_price)
+    cost_per_contract = entry_price + COMMISSION_PER_CONTRACT
+    num_contracts = floor(starting_capital / cost_per_contract)
     if num_contracts == 0:
         if not quiet: print("❌ Insufficient capital to purchase a single contract. Trade skipped.")
         return None
 
     # --- Execute with capital management ---
     exit_price = option_details['exit_price']
-    total_cost = num_contracts * entry_price
+    total_cost = num_contracts * cost_per_contract
     leftover_cash = starting_capital - total_cost
-    sale_proceeds = num_contracts * exit_price
+    sale_proceeds = (num_contracts * exit_price) - (num_contracts * COMMISSION_PER_CONTRACT)
     final_capital = sale_proceeds + leftover_cash
     return_pct = ((final_capital - starting_capital) / starting_capital) * 100
 
@@ -225,7 +228,8 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float, quiet
             if not quiet: print("   ❌ Invalid entry price of zero. Capital carries over.")
             continue
 
-        num_contracts = floor(available_capital / entry_price)
+        cost_per_contract = entry_price + COMMISSION_PER_CONTRACT
+        num_contracts = floor(available_capital / cost_per_contract)
         if num_contracts == 0:
             if not quiet: print("   ❌ Insufficient capital for a contract. Capital carries over.")
             continue
@@ -233,9 +237,9 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float, quiet
         # --- Execute with capital management ---
         total_trades += 1
         exit_price = prices['exit_price']
-        total_cost = num_contracts * entry_price
+        total_cost = num_contracts * cost_per_contract
         leftover_cash = available_capital - total_cost
-        sale_proceeds = num_contracts * exit_price
+        sale_proceeds = (num_contracts * exit_price) - (num_contracts * COMMISSION_PER_CONTRACT)
         available_capital = sale_proceeds + leftover_cash
         
         if not quiet:

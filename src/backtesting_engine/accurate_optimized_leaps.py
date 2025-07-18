@@ -19,13 +19,13 @@ from dateutil.relativedelta import relativedelta
 from typing import Dict, List, Tuple, Optional, Any
 
 # Import smart caching functions
-from smart_leaps_backtest import (
+from .smart_leaps_backtest import (
     get_stock_price_with_smart_fallback,
     analyze_smart_cache
 )
 
 # Import ThetaData market days cache system
-from market_days_cache import (
+from .market_days_cache import (
     get_first_trading_day_of_year,
     get_last_trading_day_of_year,
     get_most_recent_trading_day,

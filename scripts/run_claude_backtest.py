@@ -57,8 +57,8 @@ from src.backtesting_engine.smart_leaps_backtest import (
 # Constants
 DEFAULT_STARTING_CAPITAL = 100000.0
 COMMISSION_PER_CONTRACT = 0.35  # Realistic commission cost
-MAX_CONTRACTS_PER_TRADE = 500  # Liquidity constraint
-TARGET_CAPITAL_UTILIZATION = 0.95  # Use 95% of capital
+MAX_CONTRACTS_PER_TRADE = 999999  # Effectively unlimited
+TARGET_CAPITAL_UTILIZATION = 1.0  # Use 100% of capital
 SYMBOL = "GOOG"
 
 def calculate_position_size(available_capital: float, entry_price_per_contract: float, 
