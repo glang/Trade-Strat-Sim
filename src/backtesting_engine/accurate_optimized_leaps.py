@@ -281,14 +281,25 @@ def find_optimal_leaps_annual_january(symbol: str, year: int, entry_date: str, e
         if exit_price is None or exit_price < 0:
             if not quiet: print("   ❌ No valid exit price, trying next expiration")
             continue
+
+        # --- STOCK SPLIT LOGIC ---
+        # If a split occurred, the value of the position is multiplied by the split ratio.
+        # One contract became `split_ratio` new contracts.
+        if split_info.get('has_split'):
+            exit_price *= split_info['split_ratio']
+            if not quiet:
+                print(f"   💰 Split-adjusted exit value: ${exit_price:.2f} (original price * {split_info['split_ratio']})")
+        
         entry_greeks_data = get_bulk_eod_greeks(symbol, exp_date, entry_date, quiet=quiet)
         api_call_count += 1
         entry_greeks = extract_greeks_from_bulk(entry_greeks_data, original_strike)
         exit_greeks_data = get_bulk_eod_greeks(symbol, exp_date, exit_date, quiet=quiet)
         api_call_count += 1
         exit_greeks = extract_greeks_from_bulk(exit_greeks_data, exit_strike)
+        
         pnl_per_contract = exit_price - entry_price
-        pnl_percentage = (pnl_per_contract / entry_price) * 100
+        pnl_percentage = (pnl_per_contract / entry_price) * 100 if entry_price > 0 else 0
+        
         if not quiet:
             print(f"🎉 OPTIMAL LEAPS FOUND!")
             print(f"   API calls used: {api_call_count}")
@@ -387,15 +398,25 @@ def execute_single_quarterly_trade(symbol: str, entry_date: str, exit_date: str,
     if exit_price is None or exit_price < 0:
         if not quiet: print("❌ No valid exit price available")
         return None
+
+    # --- STOCK SPLIT LOGIC ---
+    if split_info.get('has_split'):
+        exit_price *= split_info['split_ratio']
+        if not quiet:
+            print(f"   💰 Split-adjusted exit value: ${exit_price:.2f} (original price * {split_info['split_ratio']})")
+
     entry_greeks_data = get_bulk_eod_greeks(symbol, exp_date, entry_date, quiet=quiet)
     entry_greeks = extract_greeks_from_bulk(entry_greeks_data, original_strike)
     exit_greeks_data = get_bulk_eod_greeks(symbol, exp_date, exit_date, quiet=quiet)
     exit_greeks = extract_greeks_from_bulk(exit_greeks_data, exit_strike)
+    
     pnl_per_contract = exit_price - entry_price
     pnl_percentage = (pnl_per_contract / entry_price) * 100 if entry_price > 0 else 0
+    
     entry_dt_datetime = datetime.strptime(entry_date, '%Y%m%d')
     exit_dt = datetime.strptime(exit_date, '%Y%m%d')
     hold_days = (exit_dt - entry_dt_datetime).days
+    
     if not quiet:
         print(f"✅ Quarterly trade completed:")
         print(f"   Entry: ${entry_price:.2f} → Exit: ${exit_price:.2f}")

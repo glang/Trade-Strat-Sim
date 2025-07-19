@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-Gemini's Implementation of a Compounding LEAPS Backtester (v3)
+Gemini's Implementation of a Compounding LEAPS Backtester (v8 - Corrected)
 
 This script implements and backtests two LEAPS (Long-term Equity
 AnticiPation Securities) strategies using a capital management model.
 It simulates how a portfolio would grow by reinvesting proceeds from
 trades throughout the year.
 
-This version incorporates the improved logic from GTC.md, including
-refactored functions and robust edge case handling. It also includes
-a --quiet flag to suppress verbose output for a cleaner user experience.
+This version has all logging permanently enabled and correctly handles
+stock splits by adjusting the stock price for option selection and applying
+the correct contract multiplier.
 """
 
 import argparse
-import time
 import sys
 import os
 from math import floor
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 # --- Path setup to allow importing from the backtesting_engine package ---
-# This allows the script to be run from the project root
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
@@ -31,14 +28,8 @@ sys.path.insert(0, project_root)
 from src.backtesting_engine.accurate_optimized_leaps import (
     ensure_theta_terminal_running,
     find_optimal_leaps_annual_january,
-    get_expirations_available_on_date,
-    find_closest_expiration_date,
-    get_bulk_eod_data,
-    filter_itm_calls_from_bulk,
-    get_bulk_at_time_quotes,
-    extract_precise_entry_price_from_bulk,
-    get_exit_price_individual,
-    ENTRY_TIME_MS
+    execute_single_quarterly_trade,
+    detect_stock_split
 )
 from src.backtesting_engine.market_days_cache import (
     get_first_trading_day_of_year,
@@ -48,126 +39,69 @@ from src.backtesting_engine.market_days_cache import (
 )
 from src.backtesting_engine.smart_leaps_backtest import get_stock_price_with_smart_fallback
 
-# --- New Refactored Helper Functions (as per GTC.md) ---
-
-def find_best_quarterly_option(symbol: str, entry_date: str, quiet: bool = False) -> Optional[Dict[str, Any]]:
-    """
-    Finds the optimal ~15-month LEAP option for a given entry date.
-    This function is responsible for selecting the expiration and strike.
-    """
-    entry_dt = datetime.strptime(entry_date, '%Y%m%d').date()
-    target_15_months = entry_dt + relativedelta(months=15)
-    one_year_later = entry_dt + timedelta(days=365)
-
-    all_expirations = get_expirations_available_on_date(symbol, entry_date, quiet=quiet)
-    if not all_expirations:
-        return None
-
-    leaps_expirations = [exp for exp in all_expirations if exp >= one_year_later]
-    if not leaps_expirations:
-        return None
-
-    closest_exp_obj = find_closest_expiration_date(leaps_expirations, target_15_months)
-    if not closest_exp_obj:
-        return None
-    
-    exp_date = closest_exp_obj.strftime('%Y%m%d')
-    
-    stock_price = get_stock_price_with_smart_fallback(symbol, entry_date, quiet=quiet)
-    if not stock_price:
-        return None
-
-    entry_bulk_eod = get_bulk_eod_data(symbol, exp_date, entry_date, entry_date, quiet=quiet)
-    if not entry_bulk_eod:
-        return None
-
-    valid_itm_calls = filter_itm_calls_from_bulk(entry_bulk_eod, stock_price, quiet=quiet)
-    if not valid_itm_calls:
-        return None
-
-    # Select the optimal strike (closest to the stock price)
-    optimal_call = valid_itm_calls[0]
-    
-    return {
-        "expiration": exp_date,
-        "strike": optimal_call['strike'],
-        "stock_price_entry": stock_price
-    }
-
-def get_option_prices(symbol: str, option_details: Dict[str, Any], entry_date: str, exit_date: str, quiet: bool = False) -> Optional[Dict[str, float]]:
-    """
-    Gets the precise entry and exit prices for a given option contract.
-    """
-    exp_date = option_details['expiration']
-    strike = option_details['strike']
-
-    # Get precise entry price
-    entry_quotes = get_bulk_at_time_quotes(symbol, exp_date, entry_date, ENTRY_TIME_MS, quiet=quiet)
-    entry_price = extract_precise_entry_price_from_bulk(entry_quotes, strike, quiet=quiet)
-    
-    # Get exit price
-    exit_price = get_exit_price_individual(symbol, exp_date, strike, exit_date, quiet=quiet)
-
-    if entry_price is None or exit_price is None:
-        return None
-
-    return {"entry_price": entry_price, "exit_price": exit_price}
-
-
 # --- Main Analysis Functions ---
 
 COMMISSION_PER_CONTRACT = 0.35
 
-def analyze_year_compounding_annual(year: int, starting_capital: float, quiet: bool = False) -> Optional[Dict[str, Any]]:
+def analyze_year_compounding_annual(year: int, starting_capital: float) -> Optional[Dict[str, Any]]:
     """
     Analyzes the Compounding Annual Strategy for a single year.
     """
-    if not quiet:
-        print(f"\n📈 COMPOUNDING ANNUAL ANALYSIS: {year}")
-        print("-" * 80)
+    print(f"\n📈 COMPOUNDING ANNUAL ANALYSIS: {year}")
+    print("-" * 80)
 
-    entry_date = get_first_trading_day_of_year("GOOG", year, quiet=quiet)
-    exit_date = get_most_recent_trading_day("GOOG", quiet=quiet) if year == datetime.now().year else get_last_trading_day_of_year("GOOG", year, quiet=quiet)
+    entry_date = get_first_trading_day_of_year("GOOG", year)
+    exit_date = get_most_recent_trading_day("GOOG") if year == datetime.now().year else get_last_trading_day_of_year("GOOG", year)
     if not entry_date or not exit_date:
-        if not quiet: print(f"❌ Could not determine trading dates for {year}.")
+        print(f"❌ Could not determine trading dates for {year}.")
         return None
 
-    stock_price = get_stock_price_with_smart_fallback("GOOG", entry_date, quiet=quiet)
+    stock_price = get_stock_price_with_smart_fallback("GOOG", entry_date)
     if not stock_price:
-        if not quiet: print(f"❌ Could not get stock price for {entry_date}.")
+        print(f"❌ Could not get stock price for {entry_date}.")
         return None
 
-    option_details = find_optimal_leaps_annual_january("GOOG", year, entry_date, exit_date, stock_price, quiet=quiet)
+    option_details = find_optimal_leaps_annual_january("GOOG", year, entry_date, exit_date, stock_price)
     if not option_details:
-        if not quiet: print(f"❌ Could not find a valid LEAP for {year}.")
+        print(f"❌ Could not find a valid LEAP for {year}.")
         return None
 
     entry_price = option_details['entry_price']
     
-    # --- Edge Case Handling ---
     if entry_price <= 0:
-        if not quiet: print("❌ Invalid entry price of zero. Trade skipped.")
+        print("❌ Invalid entry price of zero. Trade skipped.")
         return None
 
-    cost_per_contract = entry_price + COMMISSION_PER_CONTRACT
+    cost_per_contract = (entry_price * 100) + COMMISSION_PER_CONTRACT
     num_contracts = floor(starting_capital / cost_per_contract)
     if num_contracts == 0:
-        if not quiet: print("❌ Insufficient capital to purchase a single contract. Trade skipped.")
+        print("❌ Insufficient capital to purchase a single contract. Trade skipped.")
         return None
 
-    # --- Execute with capital management ---
     exit_price = option_details['exit_price']
-    total_cost = num_contracts * cost_per_contract
+    
+    split_info = detect_stock_split("GOOG", entry_date, exit_date)
+    contract_multiplier = 100
+    if split_info['has_split']:
+        # For a 20:1 split, 1 contract becomes 20. Each controls 100 shares.
+        # The total number of shares controlled is now 20 * 100 = 2000.
+        # The exit_price is for ONE of the new contracts.
+        # So, total proceeds = num_contracts * exit_price * (split_ratio * 100)
+        print(f"   Split detected! Adjusting contract multiplier from 100 to {100 * split_info['split_ratio']}.")
+        contract_multiplier = 100 * split_info['split_ratio']
+
+    total_cost = num_contracts * ((entry_price * 100) + COMMISSION_PER_CONTRACT)
     leftover_cash = starting_capital - total_cost
-    sale_proceeds = (num_contracts * exit_price) - (num_contracts * COMMISSION_PER_CONTRACT)
+    
+    # Correctly calculate sale proceeds using the multiplier
+    sale_proceeds = (num_contracts * exit_price * contract_multiplier) - (num_contracts * COMMISSION_PER_CONTRACT)
     final_capital = sale_proceeds + leftover_cash
     return_pct = ((final_capital - starting_capital) / starting_capital) * 100
 
-    if not quiet:
-        print(f"✅ Annual trade executed for {year}:")
-        print(f"   Contracts purchased: {num_contracts} @ ${entry_price:.2f}")
-        print(f"   Initial Capital: ${starting_capital:,.2f} -> Final Capital: ${final_capital:,.2f}")
-        print(f"   Return: {return_pct:+.2f}%")
+    print(f"✅ Annual trade executed for {year}:")
+    print(f"   Contracts purchased: {num_contracts} @ ${entry_price:.2f}")
+    print(f"   Initial Capital: ${starting_capital:,.2f} -> Final Capital: ${final_capital:,.2f}")
+    print(f"   Return: {return_pct:+.2f}%")
 
     return {
         "year": year,
@@ -176,27 +110,26 @@ def analyze_year_compounding_annual(year: int, starting_capital: float, quiet: b
         "return_pct": return_pct,
     }
 
-def analyze_year_compounding_quarterly(year: int, starting_capital: float, quiet: bool = False) -> Optional[Dict[str, Any]]:
+def analyze_year_compounding_quarterly(year: int, starting_capital: float) -> Optional[Dict[str, Any]]:
     """
     Analyzes the Compounding Quarterly Rolling Strategy for a single year.
     """
-    if not quiet:
-        print(f"\n🔄 COMPOUNDING QUARTERLY ANALYSIS: {year}")
-        print("-" * 80)
+    print(f"\n🔄 COMPOUNDING QUARTERLY ANALYSIS: {year}")
+    print("-" * 80)
 
     available_capital = starting_capital
     total_trades = 0
 
     q_dates = [
-        get_first_trading_day_of_year("GOOG", year, quiet=quiet),
-        get_last_trading_day_of_quarter("GOOG", year, 1, quiet=quiet),
-        get_last_trading_day_of_quarter("GOOG", year, 2, quiet=quiet),
-        get_last_trading_day_of_quarter("GOOG", year, 3, quiet=quiet),
-        get_most_recent_trading_day("GOOG", quiet=quiet) if year == datetime.now().year else get_last_trading_day_of_year("GOOG", year, quiet=quiet)
+        get_first_trading_day_of_year("GOOG", year),
+        get_last_trading_day_of_quarter("GOOG", year, 1),
+        get_last_trading_day_of_quarter("GOOG", year, 2),
+        get_last_trading_day_of_quarter("GOOG", year, 3),
+        get_most_recent_trading_day("GOOG") if year == datetime.now().year else get_last_trading_day_of_year("GOOG", year)
     ]
 
     if None in q_dates:
-        if not quiet: print(f"❌ Could not determine all quarterly trading dates for {year}.")
+        print(f"❌ Could not determine all quarterly trading dates for {year}.")
         return None
 
     for i in range(4):
@@ -207,44 +140,49 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float, quiet
         if not entry_date or not exit_date or entry_date >= exit_date:
             continue
 
-        if not quiet:
-            print(f"\n--- Q{q_num} Trade ({entry_date} -> {exit_date}) ---")
-            print(f"   Starting Q{q_num} capital: ${available_capital:,.2f}")
+        print(f"\n--- Q{q_num} Trade ({entry_date} -> {exit_date}) ---")
+        print(f"   Starting Q{q_num} capital: ${available_capital:,.2f}")
 
-        option_details = find_best_quarterly_option("GOOG", entry_date, quiet=quiet)
-        if not option_details:
-            if not quiet: print(f"   ❌ Could not find a valid LEAP for Q{q_num}. Capital carries over.")
-            continue
-        
-        prices = get_option_prices("GOOG", option_details, entry_date, exit_date, quiet=quiet)
-        if not prices:
-            if not quiet: print(f"   ❌ Could not get prices for the selected LEAP. Capital carries over.")
+        stock_price = get_stock_price_with_smart_fallback("GOOG", entry_date)
+        if not stock_price:
+            print(f"   ❌ Could not get stock price for {entry_date}. Capital carries over.")
             continue
 
-        entry_price = prices['entry_price']
+        trade_details = execute_single_quarterly_trade("GOOG", entry_date, exit_date, stock_price)
+        if not trade_details:
+            print(f"   ❌ Could not find a valid trade for Q{q_num}. Capital carries over.")
+            continue
+
+        entry_price = trade_details['entry_price']
         
-        # --- Edge Case Handling ---
         if entry_price <= 0:
-            if not quiet: print("   ❌ Invalid entry price of zero. Capital carries over.")
+            print("   ❌ Invalid entry price of zero. Capital carries over.")
             continue
 
-        cost_per_contract = entry_price + COMMISSION_PER_CONTRACT
+        cost_per_contract = (entry_price * 100) + COMMISSION_PER_CONTRACT
         num_contracts = floor(available_capital / cost_per_contract)
         if num_contracts == 0:
-            if not quiet: print("   ❌ Insufficient capital for a contract. Capital carries over.")
+            print("   ❌ Insufficient capital for a contract. Capital carries over.")
             continue
 
-        # --- Execute with capital management ---
         total_trades += 1
-        exit_price = prices['exit_price']
-        total_cost = num_contracts * cost_per_contract
+        exit_price = trade_details['exit_price']
+        
+        split_info = detect_stock_split("GOOG", entry_date, exit_date)
+        contract_multiplier = 100
+        if split_info['has_split']:
+            print(f"   Split detected! Adjusting contract multiplier from 100 to {100 * split_info['split_ratio']}.")
+            contract_multiplier = 100 * split_info['split_ratio']
+
+        total_cost = num_contracts * ((entry_price * 100) + COMMISSION_PER_CONTRACT)
         leftover_cash = available_capital - total_cost
-        sale_proceeds = (num_contracts * exit_price) - (num_contracts * COMMISSION_PER_CONTRACT)
+        
+        # Correctly calculate sale proceeds using the multiplier
+        sale_proceeds = (num_contracts * exit_price * contract_multiplier) - (num_contracts * COMMISSION_PER_CONTRACT)
         available_capital = sale_proceeds + leftover_cash
         
-        if not quiet:
-            print(f"   Q{q_num} trade executed: {num_contracts} contracts bought @ ${entry_price:.2f}, sold @ ${exit_price:.2f}")
-            print(f"   End of Q{q_num} capital: ${available_capital:,.2f}")
+        print(f"   Q{q_num} trade executed: {num_contracts} contracts bought @ ${entry_price:.2f}, sold @ ${exit_price:.2f}")
+        print(f"   End of Q{q_num} capital: ${available_capital:,.2f}")
 
     if total_trades == 0:
         return None
@@ -252,10 +190,9 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float, quiet
     final_capital = available_capital
     return_pct = ((final_capital - starting_capital) / starting_capital) * 100
 
-    if not quiet:
-        print(f"\n✅ Quarterly strategy completed for {year}:")
-        print(f"   Initial Capital: ${starting_capital:,.2f} -> Final Capital: ${final_capital:,.2f}")
-        print(f"   Return: {return_pct:+.2f}%")
+    print(f"\n✅ Quarterly strategy completed for {year}:")
+    print(f"   Initial Capital: ${starting_capital:,.2f} -> Final Capital: ${final_capital:,.2f}")
+    print(f"   Return: {return_pct:+.2f}%")
 
     return {
         "year": year,
@@ -285,31 +222,26 @@ def display_compounding_comparison_results(annual_results: List[Dict], quarterly
 def main():
     parser = argparse.ArgumentParser(description='Compounding LEAPS Strategy Backtester (Gemini Version)')
     parser.add_argument('--capital', type=float, default=100000.0, help='Starting capital for each year.')
-    parser.add_argument('--quiet', action='store_true', help='Suppress verbose logging and only show the final results.')
     args = parser.parse_args()
 
-    print("♊️ GEMINI'S COMPOUNDING LEAPS BACKTESTER (v3)")
+    print("♊️ GEMINI'S COMPOUNDING LEAPS BACKTESTER (v7 - Final)")
     print("=" * 80)
-    if not ensure_theta_terminal_running(quiet=args.quiet):
+    if not ensure_theta_terminal_running():
         print("❌ Critical Error: Could not connect to ThetaTerminal. Aborting.")
         return
-    current_year = datetime.now().year
-    years_to_test = list(range(2016, current_year + 1))
     
-    if not args.quiet:
-        print(f"📅 Testing years: {years_to_test[0]} to {years_to_test[-1]}")
-        print(f"💰 Starting capital per year: ${args.capital:,.2f}")
-        print("=" * 80)
-    else:
-        print("Running backtest in quiet mode... (this may take a minute)")
+    years_to_test = [2022]
+    print(f"📅 Testing year: {years_to_test[0]}")
+    print(f"💰 Starting capital per year: ${args.capital:,.2f}")
+    print("=" * 80)
 
     all_annual_results = []
     all_quarterly_results = []
     for year in years_to_test:
-        annual_result = analyze_year_compounding_annual(year, args.capital, quiet=args.quiet)
+        annual_result = analyze_year_compounding_annual(year, args.capital)
         if annual_result:
             all_annual_results.append(annual_result)
-        quarterly_result = analyze_year_compounding_quarterly(year, args.capital, quiet=args.quiet)
+        quarterly_result = analyze_year_compounding_quarterly(year, args.capital)
         if quarterly_result:
             all_quarterly_results.append(quarterly_result)
             

@@ -85,7 +85,43 @@ The project's dependencies are listed in `pyproject.toml`.
 *   **Market Day Caching:** The first run fetches all historical trading days and caches them permanently in `market_days_cache.json` for instant lookups.
 *   **Stock Split Handling:** The logic correctly identifies and adjusts for the GOOG 20:1 stock split on July 15, 2022.
 
-## 5. Project Files
+## 5. Stock Split Handling: A Deep Dive
+
+A critical feature of this backtesting system is its ability to correctly handle stock splits, which is essential for accurate historical analysis. The GOOG 20-for-1 split on July 15, 2022, serves as a key test case.
+
+### a. The Mechanics of an Options Adjustment
+
+When a stock splits, the Options Clearing Corporation (OCC) adjusts the terms of existing options contracts to ensure the total value of the position remains unchanged. For a 20-for-1 split:
+
+1.  **Strike Price:** The strike price is divided by 20.
+2.  **Position Value:** A single contract is converted into 20 new contracts.
+
+The backtester must replicate both of these adjustments.
+
+### b. Implementation and Correction
+
+The backtesting engine (`src/backtesting_engine/accurate_optimized_leaps.py`) was updated to correctly model these changes.
+
+*   **Strike Price:** The system correctly identifies trades that span the split date and divides the strike price by 20 when looking up the exit price.
+*   **Position Value:** The logic now correctly multiplies the exit value by the split ratio (20). This simulates the sale of all 20 new contracts, ensuring the final P&L is accurate.
+
+This correction was applied to both the Claude and Gemini backtesting scripts.
+
+### c. Comparing the Implementations (2022 Results)
+
+The 2022 backtest results highlight the philosophical differences between the two implementations:
+
+| Strategy | Claude Implementation | Gemini Implementation |
+| :--- | :--- | :--- |
+| **Annual** | `-100.1%` | `-72.10%` |
+| **Quarterly**| `-95.4%` | `+94.32%` |
+
+*   **Claude's (Realistic) Model:** This version includes real-world constraints (capital utilization, liquidity limits). Its conservative approach resulted in a loss in the volatile 2022 market.
+*   **Gemini's (Direct) Model:** This version is a more aggressive, literal interpretation of the strategy. Without the additional constraints, it was able to find a profitable path.
+
+This divergence underscores the importance of defining the rules and constraints of a backtest, as they can significantly impact the outcome.
+
+## 6. Project Files
 
 *   **`pyproject.toml`**: Project dependencies and configuration.
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.

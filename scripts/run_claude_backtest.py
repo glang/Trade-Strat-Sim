@@ -218,12 +218,17 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
             'trade_details': None
         }
     
+    # Add dates to the result for detailed logging
+    annual_result['entry_date'] = entry_date
+    annual_result['exit_date'] = exit_date
+
     # Calculate position size
     entry_price = annual_result['entry_price']
     position_info = calculate_position_size(starting_capital, entry_price, commission_per_contract, max_contracts_per_trade)
     
     if position_info['error'] or position_info['num_contracts'] == 0:
         error_msg = position_info['error'] or 'No contracts can be purchased'
+        # Still pass trade_details for logging purposes
         return {
             'year': year,
             'strategy': 'Annual Compounding',
@@ -284,6 +289,10 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
     quarterly_trades = []
     total_commissions = 0.0
     
+    most_recent_day = None
+    if year == datetime.now().year:
+        most_recent_day = get_most_recent_trading_day(SYMBOL, quiet=quiet)
+
     # Execute quarterly trades
     for quarter in range(1, 5):
         if not quiet:
@@ -291,7 +300,17 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         
         # Get entry and exit dates for the quarter
         entry_date = get_first_trading_day_of_quarter(SYMBOL, year, quarter, quiet=quiet)
+        
+        # For the current year, skip future quarters
+        if most_recent_day and entry_date and entry_date > most_recent_day:
+            if not quiet: print(f"Skipping Q{quarter} as it is in the future.")
+            break
+
         exit_date = get_last_trading_day_of_quarter(SYMBOL, year, quarter, quiet=quiet)
+
+        # For the current year, cap the exit date at the most recent trading day
+        if most_recent_day and exit_date and exit_date > most_recent_day:
+            exit_date = most_recent_day
         
         if not entry_date or not exit_date:
             error_msg = f"Could not determine Q{quarter} dates: entry={entry_date}, exit={exit_date}"
@@ -304,6 +323,11 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
                 'num_contracts': 0,
                 'capital_after_trade': available_capital
             })
+            continue
+
+        # If entry and exit dates are the same or invalid, it's not a valid trade period
+        if entry_date >= exit_date:
+            if not quiet: print(f"Skipping Q{quarter} as entry date ({entry_date}) is on or after exit date ({exit_date}).")
             continue
         
         # Get stock price for entry day
@@ -382,20 +406,18 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
             print(f"   New Capital: ${new_available_capital:,.2f}")
         
         # Record trade details
-        quarterly_trades.append({
+        trade_summary = {
             'quarter': quarter,
             'available_capital': available_capital,
-            'entry_date': entry_date,
-            'exit_date': exit_date,
-            'entry_price': entry_price,
-            'exit_price': exit_price,
             'num_contracts': position_info['num_contracts'],
             'capital_utilization': position_info['capital_utilization'],
             'trade_return_pct': trade_return_pct,
             'capital_after_trade': new_available_capital,
             'commissions': trade_commissions,
             'error': None
-        })
+        }
+        trade_summary.update(quarterly_result)  # Merge the detailed results
+        quarterly_trades.append(trade_summary)
         
         # Update capital for next quarter
         available_capital = new_available_capital
@@ -414,6 +436,87 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         'quarterly_trades': quarterly_trades,
         'error': None
     }
+
+def display_detailed_trades(results: List[Dict[str, Any]]) -> None:
+    """
+    Display a detailed log of every single trade made.
+    
+    Args:
+        results: List of yearly results from both strategies
+    """
+    print("\n" + "="*100)
+    print("TRADE LOG: DETAILED BREAKDOWN OF EVERY TRADE")
+    print("="*100)
+
+    # Sort results by year and then by strategy for consistent ordering
+    results.sort(key=lambda x: (x['year'], x['strategy']))
+
+    for result in results:
+        if result.get('error') and not result.get('trade_details') and not result.get('quarterly_trades'):
+            print(f"\n--- {result['year']} {result['strategy']} ---")
+            print(f"  ERROR: {result['error']}")
+            continue
+
+        if result['strategy'] == 'Annual Compounding':
+            print(f"\n--- {result['year']} {result['strategy']} ---")
+            trade = result.get('trade_details')
+            if not trade or result.get('num_contracts', 0) == 0:
+                print(f"  No trade was executed. Reason: {result.get('error', 'Not specified')}")
+                continue
+            
+            # Construct contract name
+            exp_date_str = trade['expiration']
+            exp_date_short = datetime.strptime(exp_date_str, '%Y%m%d').strftime('%y%m%d')
+            strike_formatted = f"{trade['original_strike']:08d}"
+            contract_name = f"{SYMBOL}{exp_date_short}C{strike_formatted}"
+
+            print(f"  Trade: Buy {result['num_contracts']} contracts of {contract_name} on {trade['entry_date']}")
+            print(f"  Entry Details:")
+            print(f"    - Option Price: ${trade['entry_price']:.2f}")
+            print(f"    - Total Cost: ${result['total_cost']:,.2f} (incl. ${result.get('total_commissions', 0):,.2f} commission)")
+            print(f"    - Capital Utilized: {result['capital_utilization']:.1f}%")
+            print(f"  Exit Details:")
+            print(f"    - Exit Date: {trade['exit_date']}")
+            print(f"    - Option Price: ${trade['exit_price']:.2f}")
+            print(f"    - Net Proceeds: ${result['net_proceeds']:,.2f}")
+            print(f"  Outcome:")
+            print(f"    - P/L: ${result['final_capital'] - result['starting_capital']:+,.2f}")
+            print(f"    - Return: {result['yearly_return_pct']:+.1f}%")
+
+        elif result['strategy'] == 'Quarterly Rolling Compounding':
+            print(f"\n--- {result['year']} {result['strategy']} ---")
+            trades = result.get('quarterly_trades', [])
+            if not trades:
+                print("  No trades were executed.")
+                continue
+
+            for trade in trades:
+                if trade.get('error'):
+                    print(f"\n  --- Q{trade['quarter']} ---")
+                    print(f"    ERROR: {trade['error']}")
+                    continue
+                
+                # Construct contract name from trade data
+                exp_date_str = trade['expiration']
+                exp_date_short = datetime.strptime(exp_date_str, '%Y%m%d').strftime('%y%m%d')
+                # The key is 'original_strike' in some dicts, 'strike' in others. Let's check for both.
+                strike = trade.get('original_strike') or trade.get('strike')
+                strike_formatted = f"{strike:08d}"
+                contract_name = f"{SYMBOL}{exp_date_short}C{strike_formatted}"
+
+                print(f"\n  --- Q{trade['quarter']} Trade ---")
+                print(f"    Trade: Buy {trade['num_contracts']} contracts of {contract_name} on {trade['entry_date']}")
+                print(f"    Entry Details:")
+                print(f"      - Option Price: ${trade['entry_price']:.2f}")
+                print(f"      - Capital Deployed: ${trade['available_capital']:,.2f}")
+                print(f"    Exit Details:")
+                print(f"      - Exit Date: {trade['exit_date']}")
+                print(f"      - Option Price: ${trade['exit_price']:.2f}")
+                print(f"    Outcome:")
+                print(f"      - P/L for quarter: ${trade['capital_after_trade'] - trade['available_capital']:+,.2f}")
+                print(f"      - Return for quarter: {trade['trade_return_pct']:+.1f}%")
+                print(f"      - Capital after trade: ${trade['capital_after_trade']:,.2f}")
+
 
 def display_compounding_comparison_results(results: List[Dict[str, Any]]) -> None:
     """
@@ -567,6 +670,9 @@ def main():
         all_results.append(quarterly_result)
         
         print("✓")
+    
+    # Display detailed trade log
+    display_detailed_trades(all_results)
     
     # Display comparison results
     display_compounding_comparison_results(all_results)
