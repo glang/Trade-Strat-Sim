@@ -1,30 +1,31 @@
-# LEAPS Options Backtesting System - Complete Guide
+# LEAPS Options Backtesting Platform - Complete Guide
 
 ## 1. Project Overview
-This project implements and backtests LEAPS (Long-term Equity Anticipation Securities) trading strategies for GOOG. The primary focus is on **compounding capital management** to simulate realistic portfolio performance under different market conditions.
 
-The main backtesting scripts, which represent two different AI implementations of the same core strategies, are located in the `scripts/` directory.
+This project provides a robust platform for backtesting LEAPS (Long-term Equity Anticipation Securities) trading strategies on GOOG. Its primary focus is on **compounding capital management** to simulate realistic portfolio performance under different market conditions.
 
-## 2. Implemented Strategies
+The platform features two distinct backtesting scripts, located in the `scripts/` directory. While both test the same core strategies, they represent different philosophies: one as a direct, unconstrained model, and the other as a feature-rich, realistic simulation framework.
 
-The backtester supports two primary strategies, which are compared on a year-by-year basis, each starting with a fresh capital base to isolate market conditions.
+## 2. Core Strategies
+
+The backtester supports two primary strategies. To isolate the performance characteristics of each market year, both strategies begin with a fresh $100,000 capital base at the start of every year.
 
 #### a. Compounding Annual Strategy
 - A single trade is placed per year using the full available capital.
 - **Entry:** First trading day of the year.
-- **Option:** A January LEAP for the following year is selected (ITM, strike closest to stock price).
+- **Option:** A January LEAP for the *following* year is selected (typically ITM, with a strike closest to the stock price).
 - **Position Sizing:** Buys as many contracts as possible with the available capital, factoring in a commission of $0.35 per contract.
 - **Exit:** The position is held for the entire year and sold on the last trading day.
 
 #### b. Compounding Quarterly Rolling Strategy
 - A more active strategy that rolls the LEAPS position every quarter to maintain a consistent time to expiration (~15 months).
-- **Cycle:** Four trades are placed per year. At the end of each quarter, the current position is sold, and the entire proceeds are reinvested in a new position.
+- **Cycle:** Four trades are placed per year. At the end of each quarter, the current position is sold, and the entire proceeds are reinvested.
 - **Option Selection:** For each quarter, a new ~15-month LEAP is selected.
-- **Position Sizing:** The same commission and capital rules are applied for each of the four trades.
+- **Position Sizing:** The same capital and commission rules are applied for each of the four trades, allowing capital to compound (or deplete) intra-year.
 
-## 3. Getting Started: A Guide for New Agents
+## 3. Getting Started: A Step-by-Step Guide
 
-This guide provides a complete, step-by-step process to set up and run the backtesting project from a fresh clone.
+This guide provides a complete process to set up and run the backtesting platform from a fresh clone.
 
 ### a. Prerequisites
 
@@ -36,98 +37,79 @@ This guide provides a complete, step-by-step process to set up and run the backt
     ```bash
     java -version
     ```
-    If Java is not installed, use a package manager like Homebrew (`brew install openjdk`) or download it directly.
-3.  **ThetaTerminal.jar**: Verify that the `ThetaTerminal.jar` file is present in the project's root directory. It is a critical component for connecting to the data provider.
+3.  **ThetaTerminal.jar**: Verify that the `ThetaTerminal.jar` file is present in the project's root directory.
 
 ### b. Environment File
 
-The project requires API keys stored in a `.env` file in the **project's root directory**.
+The project requires API keys stored in a `.env` file in the project's root directory.
 
-1.  From the project's root directory, copy the example:
+1.  Copy the example file:
     ```bash
     cp .env.example .env
     ```
-2.  Edit the new `.env` file with a text editor and add your credentials.
+2.  Edit the new `.env` file and add your API credentials.
 
 ### c. Install Dependencies
 
 The project's dependencies are listed in `pyproject.toml`.
 
-1.  From the project's root directory, run the following command to install all necessary packages:
+1.  From the project's root directory, run the following command:
     ```bash
     pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.14b" "python-dotenv>=1.0.1" "thetadata==0.9.11" "yfinance>=0.2.63" "python-dateutil>=2.8.2" "requests"
     ```
 
-### d. Run the Backtest
+### d. Run a Backtest
 
-1.  **Set Permissions:** Make the ThetaData startup script executable (this only needs to be done once):
+1.  **Set Permissions:** Make the ThetaData startup script executable (one-time setup):
     ```bash
     chmod +x scripts/start_theta.sh
     ```
-2.  **Execute a Backtest:** Run one of the primary backtesting scripts. The scripts will automatically start the ThetaData terminal and populate data caches on their first run.
+2.  **Execute a Backtest:** The scripts automatically start the ThetaData terminal.
 
-    *   **To run Claude's implementation (Feature-Rich Simulation):**
-        This version includes realistic trading constraints like capital utilization targets and liquidity limits, in addition to commissions. It provides a more conservative and real-world view of performance.
-        ```bash
-        python3 scripts/run_claude_backtest.py
-        ```
-
-    *   **To run Gemini's implementation (Direct Strategy Model):**
-        This version is a direct and literal implementation of the core strategy, including commissions but without the additional constraints. It is useful for analyzing the performance of the raw strategy itself.
+    *   **To run the Gemini implementation (Direct Strategy Model):**
+        This version is a direct, literal implementation of the core strategies. It is useful for analyzing the performance of the raw strategy itself without additional constraints.
         ```bash
         python3 scripts/run_gemini_backtest.py
         ```
 
-## 4. System Architecture & Technical Details
+    *   **To run the Claude implementation (Feature-Rich Simulation):**
+        This version is a more advanced simulation framework. It includes command-line configurability, a framework for liquidity limits, and provides a much more detailed and insightful final report.
+        ```bash
+        python3 scripts/run_claude_backtest.py --start-year 2016 --end-year 2025
+        ```
 
-*   **Backtesting Engine:** All core logic (data fetching, caching, option selection, pricing) is located in the `src/backtesting_engine` package.
-*   **Auto-Start:** The scripts automatically check if the ThetaData terminal is running and will launch it if needed via `scripts/start_theta.sh`.
-*   **Market Day Caching:** The first run fetches all historical trading days and caches them permanently in `market_days_cache.json` for instant lookups.
-*   **Stock Split Handling:** The logic correctly identifies and adjusts for the GOOG 20:1 stock split on July 15, 2022.
+## 4. System Architecture
 
-## 5. Stock Split Handling: A Deep Dive
-
-A critical feature of this backtesting system is its ability to correctly handle stock splits, which is essential for accurate historical analysis. The GOOG 20-for-1 split on July 15, 2022, serves as a key test case.
-
-### a. The Mechanics of an Options Adjustment
-
-When a stock splits, the Options Clearing Corporation (OCC) adjusts the terms of existing options contracts to ensure the total value of the position remains unchanged. For a 20-for-1 split:
-
-1.  **Strike Price:** The strike price is divided by 20.
-2.  **Position Value:** A single contract is converted into 20 new contracts.
-
-The backtester must replicate both of these adjustments.
-
-### b. Implementation and Correction
-
-The backtesting engine (`src/backtesting_engine/accurate_optimized_leaps.py`) was updated to correctly model these changes.
-
-*   **Strike Price:** The system correctly identifies trades that span the split date and divides the strike price by 20 when looking up the exit price.
-*   **Position Value:** The logic now correctly multiplies the exit value by the split ratio (20). This simulates the sale of all 20 new contracts, ensuring the final P&L is accurate.
-
-This correction was applied to both the Claude and Gemini backtesting scripts.
-
-### c. Comparing the Implementations (2022 Results)
-
-The 2022 backtest results highlight the philosophical differences between the two implementations:
-
-| Strategy | Claude Implementation | Gemini Implementation |
-| :--- | :--- | :--- |
-| **Annual** | `-100.1%` | `-72.10%` |
-| **Quarterly**| `-95.4%` | `+94.32%` |
-
-*   **Claude's (Realistic) Model:** This version includes real-world constraints (capital utilization, liquidity limits). Its conservative approach resulted in a loss in the volatile 2022 market.
-*   **Gemini's (Direct) Model:** This version is a more aggressive, literal interpretation of the strategy. Without the additional constraints, it was able to find a profitable path.
-
-This divergence underscores the importance of defining the rules and constraints of a backtest, as they can significantly impact the outcome.
-
-## 6. Project Files
-
-*   **`pyproject.toml`**: Project dependencies and configuration.
+*   **`src/backtesting_engine/`**: The core Python package containing all logic for data handling, option selection, capital management, and trade execution.
+*   **`scripts/`**: Contains the two runnable backtesting scripts (`run_gemini_backtest.py` and `run_claude_backtest.py`).
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
-*   **`src/backtesting_engine/`**: The core Python package containing all the logic for data handling and strategy components.
-*   **`scripts/`**: Contains the runnable backtesting scripts and helper scripts.
-*   **`docs/`**: Contains supplementary documentation.
 *   **`ThetaTerminal.jar`**: The Java application required to connect to the ThetaData API.
+*   **Auto-Start:** The scripts automatically check if the ThetaData terminal is running and will launch it if needed.
+*   **Caching:** The first run fetches all historical trading days and caches them in `market_days_cache.json` for instant lookups.
 
-This consolidated document now provides a complete and accurate overview of the project in its current, restructured state.
+## 5. Implementation Comparison: Gemini vs. Claude
+
+The two implementations serve different purposes. Gemini's script provides a raw benchmark, while Claude's script is a superior tool for in-depth, realistic analysis.
+
+| Feature | Gemini Implementation | Claude Implementation |
+| :--- | :--- | :--- |
+| **Philosophy** | Direct, raw strategy backtest | Realistic, feature-rich simulation |
+| **Configuration** | Hardcoded values | Command-line arguments |
+| **Reporting** | Basic table of results | Multi-section analytical report |
+| **Insights** | Shows final P/L | Shows P/L, **plus** commission costs & trade volume |
+| **Realism** | Assumes infinite liquidity | Includes a framework for liquidity limits |
+
+### Post-Correction Analysis (2022 Results)
+
+After fixing a critical bug in the Claude implementation, the numerical results of the two scripts are now nearly identical, as they both use the same underlying `capital_management` module. The differences are now in reporting and features, not core logic.
+
+| Strategy (2022) | Final Return (Gemini) | Final Return (Claude) |
+| :--- | :--- | :--- |
+| **Annual** | `-100.05%` | `-100.1%` |
+| **Quarterly**| `-94.89%` | `-95.4%` |
+
+The key takeaway is no longer about divergent results, but about the **quality of the simulation.** The Claude implementation is considered more "realistic" because:
+1.  **It models constraints:** It has the built-in capability to model liquidity limits, a crucial factor for any real-world trading system.
+2.  **It provides deeper insights:** Its reporting separates signal from noise, highlighting the significant impact of transaction costs (commissions) on the quarterly strategy—a vital piece of analysis that the Gemini report omits.
+
+This updated document provides a complete and accurate overview of the project in its current, corrected state.

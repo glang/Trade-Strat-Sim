@@ -52,89 +52,16 @@ from src.backtesting_engine.smart_leaps_backtest import (
     get_stock_price_with_smart_fallback,
     analyze_smart_cache
 )
-
+from src.backtesting_engine.capital_management import (
+    calculate_position_size,
+    calculate_exit_proceeds
+)
 
 # Constants
 DEFAULT_STARTING_CAPITAL = 100000.0
-COMMISSION_PER_CONTRACT = 0.35  # Realistic commission cost
-MAX_CONTRACTS_PER_TRADE = 999999  # Effectively unlimited
-TARGET_CAPITAL_UTILIZATION = 1.0  # Use 100% of capital
+COMMISSION_PER_CONTRACT = 0.35
+MAX_CONTRACTS_PER_TRADE = 999999
 SYMBOL = "GOOG"
-
-def calculate_position_size(available_capital: float, entry_price_per_contract: float, 
-                          commission_per_contract: float = COMMISSION_PER_CONTRACT,
-                          max_contracts_per_trade: int = MAX_CONTRACTS_PER_TRADE) -> Dict[str, Any]:
-    """
-    Calculate realistic position size with constraints.
-    
-    Args:
-        available_capital: Available capital for trading
-        entry_price_per_contract: Entry price per option contract
-        
-    Returns:
-        Dict containing position size details
-    """
-    if entry_price_per_contract <= 0:
-        return {
-            'num_contracts': 0,
-            'total_entry_cost': 0.0,
-            'total_commission': 0.0,
-            'total_cost': 0.0,
-            'leftover_cash': available_capital,
-            'capital_utilization': 0.0,
-            'error': 'Invalid entry price'
-        }
-    
-    # Calculate maximum contracts based on target utilization
-    target_capital = available_capital * TARGET_CAPITAL_UTILIZATION
-    
-    # Account for commission in position sizing
-    cost_per_contract = entry_price_per_contract + commission_per_contract
-    
-    # Calculate maximum affordable contracts
-    max_affordable = int(target_capital / cost_per_contract)
-    
-    # Apply liquidity constraint
-    num_contracts = min(max_affordable, max_contracts_per_trade)
-    
-    # Calculate actual costs
-    total_entry_cost = num_contracts * entry_price_per_contract
-    total_commission = num_contracts * commission_per_contract
-    total_cost = total_entry_cost + total_commission
-    leftover_cash = available_capital - total_cost
-    capital_utilization = (total_cost / available_capital) * 100
-    
-    return {
-        'num_contracts': num_contracts,
-        'total_entry_cost': total_entry_cost,
-        'total_commission': total_commission,
-        'total_cost': total_cost,
-        'leftover_cash': leftover_cash,
-        'capital_utilization': capital_utilization,
-        'error': None
-    }
-
-def calculate_exit_proceeds(num_contracts: int, exit_price_per_contract: float,
-                          commission_per_contract: float = COMMISSION_PER_CONTRACT) -> Dict[str, Any]:
-    """
-    Calculate exit proceeds including commission costs.
-    
-    Args:
-        num_contracts: Number of contracts to sell
-        exit_price_per_contract: Exit price per contract
-        
-    Returns:
-        Dict containing exit proceeds details
-    """
-    gross_proceeds = num_contracts * exit_price_per_contract
-    exit_commission = num_contracts * commission_per_contract
-    net_proceeds = gross_proceeds - exit_commission
-    
-    return {
-        'gross_proceeds': gross_proceeds,
-        'exit_commission': exit_commission,
-        'net_proceeds': net_proceeds
-    }
 
 def analyze_year_compounding_annual(year: int, starting_capital: float, 
                                   commission_per_contract: float = COMMISSION_PER_CONTRACT,
@@ -224,7 +151,7 @@ def analyze_year_compounding_annual(year: int, starting_capital: float,
 
     # Calculate position size
     entry_price = annual_result['entry_price']
-    position_info = calculate_position_size(starting_capital, entry_price, commission_per_contract, max_contracts_per_trade)
+    position_info = calculate_position_size(starting_capital, entry_price, commission_per_contract, max_contracts_per_trade=max_contracts_per_trade)
     
     if position_info['error'] or position_info['num_contracts'] == 0:
         error_msg = position_info['error'] or 'No contracts can be purchased'
@@ -369,7 +296,7 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float,
         
         # Calculate position size
         entry_price = quarterly_result['entry_price']
-        position_info = calculate_position_size(available_capital, entry_price, commission_per_contract, max_contracts_per_trade)
+        position_info = calculate_position_size(available_capital, entry_price, commission_per_contract, max_contracts_per_trade=max_contracts_per_trade)
         
         if position_info['error'] or position_info['num_contracts'] == 0:
             error_msg = position_info['error'] or 'No contracts can be purchased'

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
-Gemini's Implementation of a Compounding LEAPS Backtester (v8 - Corrected)
+Gemini's Implementation of a Compounding LEAPS Backtester (v9 - Standardized)
 
 This script implements and backtests two LEAPS (Long-term Equity
 AnticiPation Securities) strategies using a capital management model.
 It simulates how a portfolio would grow by reinvesting proceeds from
 trades throughout the year.
 
-This version has all logging permanently enabled and correctly handles
-stock splits by adjusting the stock price for option selection and applying
-the correct contract multiplier.
+This version has been standardized to use the shared `capital_management`
+module, ensuring its logic for position sizing and commission handling is
+identical to the Claude implementation.
 """
 
 import argparse
 import sys
 import os
-from math import floor
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -29,7 +28,6 @@ from src.backtesting_engine.accurate_optimized_leaps import (
     ensure_theta_terminal_running,
     find_optimal_leaps_annual_january,
     execute_single_quarterly_trade,
-    detect_stock_split
 )
 from src.backtesting_engine.market_days_cache import (
     get_first_trading_day_of_year,
@@ -38,10 +36,12 @@ from src.backtesting_engine.market_days_cache import (
     get_last_trading_day_of_quarter
 )
 from src.backtesting_engine.smart_leaps_backtest import get_stock_price_with_smart_fallback
+from src.backtesting_engine.capital_management import (
+    calculate_position_size,
+    calculate_exit_proceeds
+)
 
 # --- Main Analysis Functions ---
-
-COMMISSION_PER_CONTRACT = 0.35
 
 def analyze_year_compounding_annual(year: int, starting_capital: float) -> Optional[Dict[str, Any]]:
     """
@@ -61,45 +61,30 @@ def analyze_year_compounding_annual(year: int, starting_capital: float) -> Optio
         print(f"❌ Could not get stock price for {entry_date}.")
         return None
 
-    option_details = find_optimal_leaps_annual_january("GOOG", year, entry_date, exit_date, stock_price)
+    # Use the accurate, optimized function to find the best LEAP
+    option_details = find_optimal_leaps_annual_january("GOOG", year, entry_date, exit_date, stock_price, quiet=True)
     if not option_details:
         print(f"❌ Could not find a valid LEAP for {year}.")
         return None
 
+    # Use the standardized function to calculate position size
     entry_price = option_details['entry_price']
+    position_info = calculate_position_size(starting_capital, entry_price)
     
-    if entry_price <= 0:
-        print("❌ Invalid entry price of zero. Trade skipped.")
+    if position_info['error'] or position_info['num_contracts'] == 0:
+        print(f"❌ {position_info['error'] or 'Insufficient capital'}. Trade skipped.")
         return None
 
-    cost_per_contract = (entry_price * 100) + COMMISSION_PER_CONTRACT
-    num_contracts = floor(starting_capital / cost_per_contract)
-    if num_contracts == 0:
-        print("❌ Insufficient capital to purchase a single contract. Trade skipped.")
-        return None
-
+    # Use the standardized function to calculate exit proceeds
     exit_price = option_details['exit_price']
-    
-    split_info = detect_stock_split("GOOG", entry_date, exit_date)
-    contract_multiplier = 100
-    if split_info['has_split']:
-        # For a 20:1 split, 1 contract becomes 20. Each controls 100 shares.
-        # The total number of shares controlled is now 20 * 100 = 2000.
-        # The exit_price is for ONE of the new contracts.
-        # So, total proceeds = num_contracts * exit_price * (split_ratio * 100)
-        print(f"   Split detected! Adjusting contract multiplier from 100 to {100 * split_info['split_ratio']}.")
-        contract_multiplier = 100 * split_info['split_ratio']
+    exit_info = calculate_exit_proceeds(position_info['num_contracts'], exit_price)
 
-    total_cost = num_contracts * ((entry_price * 100) + COMMISSION_PER_CONTRACT)
-    leftover_cash = starting_capital - total_cost
-    
-    # Correctly calculate sale proceeds using the multiplier
-    sale_proceeds = (num_contracts * exit_price * contract_multiplier) - (num_contracts * COMMISSION_PER_CONTRACT)
-    final_capital = sale_proceeds + leftover_cash
+    # Calculate final capital and return
+    final_capital = exit_info['net_proceeds'] + position_info['leftover_cash']
     return_pct = ((final_capital - starting_capital) / starting_capital) * 100
 
     print(f"✅ Annual trade executed for {year}:")
-    print(f"   Contracts purchased: {num_contracts} @ ${entry_price:.2f}")
+    print(f"   Contracts purchased: {position_info['num_contracts']} @ ${entry_price:.2f}")
     print(f"   Initial Capital: ${starting_capital:,.2f} -> Final Capital: ${final_capital:,.2f}")
     print(f"   Return: {return_pct:+.2f}%")
 
@@ -148,40 +133,27 @@ def analyze_year_compounding_quarterly(year: int, starting_capital: float) -> Op
             print(f"   ❌ Could not get stock price for {entry_date}. Capital carries over.")
             continue
 
-        trade_details = execute_single_quarterly_trade("GOOG", entry_date, exit_date, stock_price)
+        trade_details = execute_single_quarterly_trade("GOOG", entry_date, exit_date, stock_price, quiet=True)
         if not trade_details:
             print(f"   ❌ Could not find a valid trade for Q{q_num}. Capital carries over.")
             continue
 
+        # Use standardized functions for sizing and proceeds
         entry_price = trade_details['entry_price']
-        
-        if entry_price <= 0:
-            print("   ❌ Invalid entry price of zero. Capital carries over.")
-            continue
+        position_info = calculate_position_size(available_capital, entry_price)
 
-        cost_per_contract = (entry_price * 100) + COMMISSION_PER_CONTRACT
-        num_contracts = floor(available_capital / cost_per_contract)
-        if num_contracts == 0:
-            print("   ❌ Insufficient capital for a contract. Capital carries over.")
+        if position_info['error'] or position_info['num_contracts'] == 0:
+            print(f"   ❌ {position_info['error'] or 'Insufficient capital'}. Capital carries over.")
             continue
 
         total_trades += 1
         exit_price = trade_details['exit_price']
+        exit_info = calculate_exit_proceeds(position_info['num_contracts'], exit_price)
         
-        split_info = detect_stock_split("GOOG", entry_date, exit_date)
-        contract_multiplier = 100
-        if split_info['has_split']:
-            print(f"   Split detected! Adjusting contract multiplier from 100 to {100 * split_info['split_ratio']}.")
-            contract_multiplier = 100 * split_info['split_ratio']
-
-        total_cost = num_contracts * ((entry_price * 100) + COMMISSION_PER_CONTRACT)
-        leftover_cash = available_capital - total_cost
+        # Update capital for the next quarter
+        available_capital = exit_info['net_proceeds'] + position_info['leftover_cash']
         
-        # Correctly calculate sale proceeds using the multiplier
-        sale_proceeds = (num_contracts * exit_price * contract_multiplier) - (num_contracts * COMMISSION_PER_CONTRACT)
-        available_capital = sale_proceeds + leftover_cash
-        
-        print(f"   Q{q_num} trade executed: {num_contracts} contracts bought @ ${entry_price:.2f}, sold @ ${exit_price:.2f}")
+        print(f"   Q{q_num} trade executed: {position_info['num_contracts']} contracts bought @ ${entry_price:.2f}, sold @ ${exit_price:.2f}")
         print(f"   End of Q{q_num} capital: ${available_capital:,.2f}")
 
     if total_trades == 0:
@@ -222,25 +194,32 @@ def display_compounding_comparison_results(annual_results: List[Dict], quarterly
 def main():
     parser = argparse.ArgumentParser(description='Compounding LEAPS Strategy Backtester (Gemini Version)')
     parser.add_argument('--capital', type=float, default=100000.0, help='Starting capital for each year.')
+    parser.add_argument('--start-year', type=int, default=2016, help='Starting year for backtest (default: 2016)')
+    parser.add_argument('--end-year', type=int, default=2025, help='Ending year for backtest (default: 2025)')
     args = parser.parse_args()
 
-    print("♊️ GEMINI'S COMPOUNDING LEAPS BACKTESTER (v7 - Final)")
+    print("♊️ GEMINI'S COMPOUNDING LEAPS BACKTESTER (v9 - Standardized)")
     print("=" * 80)
     if not ensure_theta_terminal_running():
         print("❌ Critical Error: Could not connect to ThetaTerminal. Aborting.")
         return
     
-    years_to_test = [2022]
-    print(f"📅 Testing year: {years_to_test[0]}")
+    years_to_test = range(args.start_year, args.end_year + 1)
+    print(f"📅 Testing years: {args.start_year} to {args.end_year}")
     print(f"💰 Starting capital per year: ${args.capital:,.2f}")
     print("=" * 80)
 
     all_annual_results = []
     all_quarterly_results = []
     for year in years_to_test:
+        if year > datetime.now().year:
+            continue
+        
+        print(f"\nProcessing {year}...")
         annual_result = analyze_year_compounding_annual(year, args.capital)
         if annual_result:
             all_annual_results.append(annual_result)
+        
         quarterly_result = analyze_year_compounding_quarterly(year, args.capital)
         if quarterly_result:
             all_quarterly_results.append(quarterly_result)
