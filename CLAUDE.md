@@ -58,7 +58,7 @@ cp .env.example .env
 
 ### c. Install Dependencies
 ```bash
-pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.14b" "python-dotenv>=1.0.1" "thetadata==0.9.11" "yfinance>=0.2.63" "python-dateutil>=2.8.2" "requests"
+pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.14b" "python-dotenv>=1.0.1" "thetadata==0.9.11" "yfinance>=0.2.63" "python-dateutil>=2.8.2" "requests" "psutil" "python-dotenv"
 ```
 
 ### d. Running the Tools
@@ -80,5 +80,10 @@ pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.
 *   **`scripts/`**: Contains the runnable backtesting scripts, including `run_gemini_backtest.py`, `run_claude_backtest.py`, `run_strike_comparison_backtest.py`, and `run_simple_pmcc_test.py`.
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
 *   **`ThetaTerminal.jar`**: The Java application required to connect to the ThetaData API.
-*   **Auto-Start:** The scripts use a robust connection manager that automatically handles ThetaTerminal startup, process management, and connection verification.
+*   **Robust Connection Management:** The platform uses `ThetaConnectionManager` which provides:
+    - Automatic ThetaTerminal startup and shutdown
+    - Intelligent process detection and cleanup
+    - Proper credential handling without shell escaping issues
+    - Comprehensive error reporting and connection verification
+    - Signal handling for clean exits
 *   **Caching:** The first run fetches all historical trading days and caches them in `market_days_cache.json` for instant lookups.
