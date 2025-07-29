@@ -57,9 +57,54 @@ cp .env.example .env
 ```
 
 ### c. Install Dependencies
+
+#### Required Python Packages
+The platform requires several Python packages for data processing, API connectivity, and system management:
+
 ```bash
-pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.14b" "python-dotenv>=1.0.1" "thetadata==0.9.11" "yfinance>=0.2.63" "python-dateutil>=2.8.2" "requests" "psutil" "python-dotenv"
+# Core dependencies
+pip3 install aiohttp>=3.12.13 numpy~=1.26.4 pandas>=2.3.0 pandas-ta>=0.3.14b python-dotenv>=1.0.1 thetadata==0.9.11 yfinance>=0.2.63 python-dateutil>=2.8.2 requests psutil
 ```
+
+**Package Purposes:**
+- `aiohttp` - Async HTTP client for API requests
+- `numpy` - Numerical computing foundation
+- `pandas` - Data manipulation and analysis
+- `pandas-ta` - Technical analysis indicators
+- `python-dotenv` - Environment variable management
+- `thetadata` - ThetaData API client library
+- `yfinance` - Yahoo Finance data fallback
+- `python-dateutil` - Date/time parsing utilities
+- `requests` - HTTP library for API calls
+- `psutil` - System process management (for ThetaTerminal)
+
+#### macOS Setup Notes
+If you encounter pip installation issues on macOS:
+
+1. **Install pip if missing:**
+   ```bash
+   # Download and install pip
+   curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+   python3 get-pip.py --user
+   rm get-pip.py  # Clean up after installation
+   ```
+
+2. **Handle externally-managed environment:**
+   ```bash
+   # If you get "externally-managed-environment" error, add this flag:
+   pip3 install [packages] --break-system-packages
+   
+   # Or use virtual environment (recommended):
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install [packages]
+   ```
+
+3. **macOS-specific dependencies:**
+   ```bash
+   # Install Xcode command line tools if needed
+   xcode-select --install
+   ```
 
 ### d. Running the Tools
 **Execute a Backtest:**
