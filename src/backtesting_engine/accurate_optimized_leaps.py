@@ -73,7 +73,19 @@ def ensure_theta_terminal_running(quiet: bool = False) -> bool:
     except:
         pass
     if not quiet: print("🚀 Starting ThetaTerminal...")
-    subprocess.Popen(["./start_theta.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # --- Path Correction ---
+    # Get the absolute path to the project root directory
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    start_script_path = os.path.join(project_root, "scripts", "start_theta.sh")
+
+    if not os.path.exists(start_script_path):
+        if not quiet:
+            print(f"❌ Critical Error: Cannot find '{start_script_path}'")
+        return False
+
+        subprocess.Popen(["bash", start_script_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=project_root)
+    
     for i in range(30):
         try:
             response = requests.get(f"{THETADATA_API_BASE}/v2/system/mdds/status", timeout=2)
