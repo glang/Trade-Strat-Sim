@@ -168,11 +168,19 @@ class ThetaConnectionManager:
             # Check if process is running but not connected yet
             if self._is_theta_process_running():
                 if not quiet:
-                    print("🔄 ThetaTerminal process found, waiting for connection...")
-                return self._wait_for_connection(max_wait=30, quiet=quiet)
-            
-            # Kill any stale processes
-            self._kill_existing_processes(quiet=quiet)
+                    print("🔄 ThetaTerminal process found, checking if responsive...")
+                
+                # Give existing process a brief chance to connect (only 10 seconds)
+                # If it doesn't connect quickly, assume it's stale
+                if self._wait_for_connection(max_wait=10, quiet=True):
+                    if not quiet:
+                        print("✅ Existing ThetaTerminal process connected successfully!")
+                    return True
+                else:
+                    if not quiet:
+                        print("⚠️  Existing process appears stale, terminating and restarting...")
+                    # Process exists but won't connect - it's stale, kill it
+                    self._kill_existing_processes(quiet=quiet)
             
             # Start new process
             if not self._start_theta_process(quiet=quiet):
@@ -188,22 +196,45 @@ class ThetaConnectionManager:
     
     def _kill_existing_processes(self, quiet: bool = False) -> None:
         """Kill any existing ThetaTerminal processes."""
-        killed_any = False
+        processes_to_kill = []
         
+        # First, identify all ThetaTerminal processes
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if proc.info['name'] and 'java' in proc.info['name'].lower():
                     cmdline = proc.info.get('cmdline', [])
                     if any('ThetaTerminal.jar' in str(arg) for arg in cmdline):
-                        if not quiet:
-                            print(f"🔄 Terminating existing ThetaTerminal (PID: {proc.info['pid']})")
-                        proc.terminate()
-                        killed_any = True
+                        processes_to_kill.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
-        if killed_any:
-            time.sleep(3)  # Give processes time to terminate
+        if not processes_to_kill:
+            return
+        
+        # Attempt graceful termination first
+        for proc in processes_to_kill:
+            try:
+                if not quiet:
+                    print(f"🔄 Terminating existing ThetaTerminal (PID: {proc.pid})")
+                proc.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # Wait for graceful termination
+        time.sleep(3)
+        
+        # Force kill any remaining processes
+        for proc in processes_to_kill:
+            try:
+                if proc.is_running():
+                    if not quiet:
+                        print(f"💀 Force killing stubborn ThetaTerminal (PID: {proc.pid})")
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # Final wait to ensure cleanup
+        time.sleep(1)
     
     def cleanup(self) -> None:
         """Clean up resources and terminate processes."""
