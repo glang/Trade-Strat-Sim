@@ -62,11 +62,7 @@ pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.
 ```
 
 ### d. Running the Tools
-1.  **Set Permissions:**
-    ```bash
-    chmod +x scripts/start_theta.sh
-    ```
-2.  **Execute a Backtest:**
+**Execute a Backtest:**
     ```bash
     # To run the feature-rich compounding simulation
     python3 scripts/run_claude_backtest.py --start-year 2016 --end-year 2025
@@ -84,5 +80,5 @@ pip3 install "aiohttp>=3.12.13" "numpy~=1.26.4" "pandas>=2.3.0" "pandas-ta>=0.3.
 *   **`scripts/`**: Contains the runnable backtesting scripts, including `run_gemini_backtest.py`, `run_claude_backtest.py`, `run_strike_comparison_backtest.py`, and `run_simple_pmcc_test.py`.
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
 *   **`ThetaTerminal.jar`**: The Java application required to connect to the ThetaData API.
-*   **Auto-Start:** The scripts automatically check if the ThetaTerminal is running and will launch it if needed.
+*   **Auto-Start:** The scripts use a robust connection manager that automatically handles ThetaTerminal startup, process management, and connection verification.
 *   **Caching:** The first run fetches all historical trading days and caches them in `market_days_cache.json` for instant lookups.

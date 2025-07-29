@@ -65,41 +65,21 @@ def find_closest_expiration_date(available_expirations: List[datetime.date], tar
     return closest_exp
 
 def ensure_theta_terminal_running(quiet: bool = False) -> bool:
-    try:
-        response = requests.get(f"{THETADATA_API_BASE}/v2/system/mdds/status", timeout=5)
-        if response.text == "CONNECTED":
-            if not quiet: print("✅ ThetaTerminal already running and connected")
-            return True
-    except:
-        pass
-    if not quiet: print("🚀 Starting ThetaTerminal...")
+    """
+    DEPRECATED: Use theta_connection_manager.ensure_theta_terminal_connected() instead.
     
-    # --- Path Correction ---
-    # Get the absolute path to the project root directory
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    start_script_path = os.path.join(project_root, "scripts", "start_theta.sh")
-
-    if not os.path.exists(start_script_path):
-        if not quiet:
-            print(f"❌ Critical Error: Cannot find '{start_script_path}'")
-        return False
-
-        subprocess.Popen(["bash", start_script_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=project_root)
+    This function is kept for backward compatibility but will be removed in future versions.
+    """
+    import warnings
+    warnings.warn(
+        "ensure_theta_terminal_running() is deprecated. "
+        "Use theta_connection_manager.ensure_theta_terminal_connected() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     
-    for i in range(30):
-        try:
-            response = requests.get(f"{THETADATA_API_BASE}/v2/system/mdds/status", timeout=2)
-            if response.text == "CONNECTED":
-                if not quiet: print("✅ ThetaTerminal connected successfully")
-                return True
-        except:
-            pass
-        if not quiet and i % 5 == 0 and i > 0:
-            print(f"⏳ Waiting for ThetaTerminal to connect... ({i}s)")
-    if not quiet:
-        print("❌ Failed to start ThetaTerminal after 30 seconds")
-        print("💡 Please check ThetaTerminal credentials and try again")
-    return False
+    from .theta_connection_manager import ensure_theta_terminal_connected
+    return ensure_theta_terminal_connected(quiet=quiet)
 
 def api_call(cmd: str, quiet: bool = False) -> dict:
     try:

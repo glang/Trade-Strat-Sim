@@ -32,8 +32,8 @@ project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 
 # --- Import existing functions ---
+from src.backtesting_engine.theta_connection_manager import ensure_theta_terminal_connected
 from src.backtesting_engine.accurate_optimized_leaps import (
-    ensure_theta_terminal_running,
     get_january_expirations,
     get_bulk_eod_data,
     get_bulk_at_time_quotes,
@@ -253,7 +253,7 @@ def main():
     parser.add_argument('--quiet', action='store_true', help='Suppress verbose output')
     args = parser.parse_args()
 
-    if not ensure_theta_terminal_running(quiet=args.quiet):
+    if not ensure_theta_terminal_connected(quiet=args.quiet):
         print("❌ Critical Error: Could not connect to ThetaTerminal. Aborting.")
         sys.exit(1)
 

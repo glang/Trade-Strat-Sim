@@ -36,10 +36,10 @@ project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 
 # Import all necessary functions from the existing backtest
+from src.backtesting_engine.theta_connection_manager import ensure_theta_terminal_connected
 from src.backtesting_engine.accurate_optimized_leaps import (
     find_optimal_leaps_annual_january,
     execute_single_quarterly_trade,
-    ensure_theta_terminal_running,
 )
 from src.backtesting_engine.market_days_cache import (
     get_first_trading_day_of_year,
@@ -574,7 +574,7 @@ def main():
     print("Processing... (this may take a few minutes)")
     
     # Ensure ThetaTerminal is running (silently)
-    if not ensure_theta_terminal_running(quiet=True):
+    if not ensure_theta_terminal_connected(quiet=True):
         print("❌ Failed to start ThetaTerminal. Please check your setup.")
         sys.exit(1)
     

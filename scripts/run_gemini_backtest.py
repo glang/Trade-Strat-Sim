@@ -24,8 +24,8 @@ project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 
 # --- Reuse existing, tested functions from the project ---
+from src.backtesting_engine.theta_connection_manager import ensure_theta_terminal_connected
 from src.backtesting_engine.accurate_optimized_leaps import (
-    ensure_theta_terminal_running,
     find_optimal_leaps_annual_january,
     execute_single_quarterly_trade,
 )
@@ -200,7 +200,7 @@ def main():
 
     print("♊️ GEMINI'S COMPOUNDING LEAPS BACKTESTER (v9 - Standardized)")
     print("=" * 80)
-    if not ensure_theta_terminal_running():
+    if not ensure_theta_terminal_connected():
         print("❌ Critical Error: Could not connect to ThetaTerminal. Aborting.")
         return
     
