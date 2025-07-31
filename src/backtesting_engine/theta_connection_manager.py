@@ -24,7 +24,7 @@ class ThetaConnectionManager:
     
     def __init__(self, project_root: Optional[str] = None):
         self.project_root = Path(project_root) if project_root else self._find_project_root()
-        self.jar_path = self.project_root / "ThetaTerminal.jar"
+        self.jar_path = self.project_root / "ThetaTerminalv3.jar"
         self.env_path = self.project_root / ".env"
         self.process: Optional[subprocess.Popen] = None
         self.api_base = "http://127.0.0.1:25510"
@@ -42,13 +42,13 @@ class ThetaConnectionManager:
         signal.signal(signal.SIGINT, self._cleanup_handler)
     
     def _find_project_root(self) -> Path:
-        """Find project root by looking for ThetaTerminal.jar."""
+        """Find project root by looking for ThetaTerminalv3.jar."""
         current = Path(__file__).parent
         while current != current.parent:
-            if (current / "ThetaTerminal.jar").exists():
+            if (current / "ThetaTerminalv3.jar").exists():
                 return current
             current = current.parent
-        raise FileNotFoundError("Could not find project root with ThetaTerminal.jar")
+        raise FileNotFoundError("Could not find project root with ThetaTerminalv3.jar")
     
     def _cleanup_handler(self, signum, frame):
         """Handle cleanup on signal."""

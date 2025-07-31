@@ -47,7 +47,7 @@ This guide provides a complete process to set up and run the backtesting platfor
 ### a. Prerequisites
 1.  **Python 3.11+**
 2.  **Java Development Kit (JDK)**
-3.  **`ThetaTerminal.jar`** file in the project's root directory.
+3.  **`ThetaTerminalv3.jar`** file in the project's root directory.
 
 ### b. Environment File
 The project requires API keys stored in a `.env` file in the project's root directory.
@@ -124,7 +124,7 @@ If you encounter pip installation issues on macOS:
 *   **`src/backtesting_engine/`**: The core Python package containing all logic for data handling, option selection, capital management, and trade execution.
 *   **`scripts/`**: Contains the runnable backtesting scripts, including `run_gemini_backtest.py`, `run_claude_backtest.py`, `run_strike_comparison_backtest.py`, and `run_simple_pmcc_test.py`.
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
-*   **`ThetaTerminal.jar`**: The Java application required to connect to the ThetaData API.
+*   **`ThetaTerminalv3.jar`**: The Java application required to connect to the ThetaData API.
 *   **Robust Connection Management:** The platform uses `ThetaConnectionManager` which provides:
     - Automatic ThetaTerminal startup and shutdown
     - Intelligent process detection and cleanup
