@@ -142,3 +142,11 @@ If you encounter pip installation issues on macOS:
     - Comprehensive error reporting and connection verification
     - Signal handling for clean exits
 *   **Caching:** The first run fetches all historical trading days and caches them in `market_days_cache.json` for instant lookups.
+
+### Important Note on API Usage
+
+The ThetaData v3 API endpoints have distinct and specific query parameter requirements. Do not assume that parameters (e.g., `date` vs. `start_date`) are consistent across different endpoints.
+
+When implementing or modifying an API call, it is **mandatory** to:
+1.  Consult the specific documentation page for that exact endpoint.
+2.  Refer to the **Sample Code** section on that page as the "gold standard" reference for implementation. This ensures that all required parameters are provided in the correct format.
