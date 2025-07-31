@@ -27,8 +27,8 @@ class ThetaConnectionManager:
         self.jar_path = self.project_root / "ThetaTerminalv3.jar"
         self.env_path = self.project_root / ".env"
         self.process: Optional[subprocess.Popen] = None
-        # ThetaTerminalv3 uses port 25503 instead of 25510
-        self.api_base = "http://127.0.0.1:25503"
+        # ThetaTerminalv3 uses port 25503 with v3 API structure
+        self.api_base = "http://127.0.0.1:25503/v3"
         
         # Load environment variables
         if self.env_path.exists():
@@ -71,11 +71,13 @@ class ThetaConnectionManager:
     def _check_api_connection(self, timeout: int = 5) -> bool:
         """Check if ThetaTerminal API is responsive."""
         try:
+            # Test with v3 option strikes endpoint for GOOG (first trading day of 2025)
             response = requests.get(
-                f"{self.api_base}/v2/system/mdds/status", 
+                f"{self.api_base}/option/list/strikes?symbol=GOOG&expiration=20250103&format=json", 
                 timeout=timeout
             )
-            return response.text.strip() == "CONNECTED"
+            # Check if we got a valid response (should return strikes data)
+            return response.status_code == 200 and len(response.text.strip()) > 0
         except Exception:
             return False
     
