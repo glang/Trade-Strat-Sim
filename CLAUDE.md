@@ -149,4 +149,4 @@ The ThetaData v3 API endpoints have distinct and specific query parameter requir
 
 When implementing or modifying an API call, it is **mandatory** to:
 1.  Consult the specific documentation page for that exact endpoint.
-2.  Refer to the **Sample Code** section on that page as the "gold standard" reference for implementation. This ensures that all required parameters are provided in the correct format.
+2.  Refer to the **Sample Code** section on that page as the "gold standard" reference for implementation. The documentation exclusively uses the `httpx` Python library for examples; `curl` is not used and should be avoided in favor of `httpx` to ensure correctness. This ensures that all required parameters are provided in the correct format.
