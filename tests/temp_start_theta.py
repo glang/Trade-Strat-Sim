@@ -1,4 +1,0 @@
-
-from src.backtesting_engine.theta_connection_manager import ensure_theta_terminal_connected
-
-ensure_theta_terminal_connected()
