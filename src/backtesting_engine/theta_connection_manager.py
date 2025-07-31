@@ -265,13 +265,8 @@ class ThetaConnectionManager:
             finally:
                 self.process = None
         
-        # Clean up credentials file
-        creds_file = self.project_root / "creds.txt"
-        if creds_file.exists():
-            try:
-                creds_file.unlink()
-            except OSError:
-                pass
+        # Note: We no longer auto-delete creds.txt to allow persistent credentials
+        # Users can manually delete creds.txt if they want temporary credentials
     
     def is_connected(self) -> bool:
         """Check if ThetaTerminal is currently connected."""
@@ -279,12 +274,14 @@ class ThetaConnectionManager:
     
     def get_status(self) -> Dict[str, Any]:
         """Get detailed connection status."""
+        creds_file = self.project_root / "creds.txt"
         return {
             "process_running": self._is_theta_process_running(),
             "api_connected": self._check_api_connection(),
             "jar_exists": self.jar_path.exists(),
             "env_exists": self.env_path.exists(),
-            "credentials_set": bool(self.username and self.password)
+            "credentials_set": bool(self.username and self.password),
+            "creds_file_exists": creds_file.exists()
         }
 
 

@@ -1,6 +1,10 @@
 # .env file for API keys and sensitive information
 .env
 
+# ThetaTerminal credentials and config files
+creds.txt
+config.toml
+
 # Cache files
 market_days_cache.json
 smart_stock_cache.json

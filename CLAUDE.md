@@ -49,12 +49,21 @@ This guide provides a complete process to set up and run the backtesting platfor
 2.  **Java Development Kit (JDK)**
 3.  **`ThetaTerminalv3.jar`** file in the project's root directory.
 
-### b. Environment File
+### b. Environment File and Credentials
 The project requires API keys stored in a `.env` file in the project's root directory.
 ```bash
 cp .env.example .env
 # Edit the new .env file and add your API credentials.
 ```
+
+**ThetaTerminalv3 Credentials Setup:**
+After setting up your `.env` file, create a credentials file for ThetaTerminal:
+```bash
+# Create creds.txt from your .env variables
+source .env && echo "$THETADATA_USERNAME" > creds.txt && echo "$THETADATA_PASSWORD" >> creds.txt
+```
+
+**Note:** The `creds.txt` file is automatically excluded from git commits via `.gitignore` to protect your credentials.
 
 ### c. Install Dependencies
 
@@ -124,11 +133,13 @@ If you encounter pip installation issues on macOS:
 *   **`src/backtesting_engine/`**: The core Python package containing all logic for data handling, option selection, capital management, and trade execution.
 *   **`scripts/`**: Contains the runnable backtesting scripts, including `run_gemini_backtest.py`, `run_claude_backtest.py`, `run_strike_comparison_backtest.py`, and `run_simple_pmcc_test.py`.
 *   **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
-*   **`ThetaTerminalv3.jar`**: The Java application required to connect to the ThetaData API.
+*   **`ThetaTerminalv3.jar`**: The Java application required to connect to the ThetaData API (v3).
 *   **Robust Connection Management:** The platform uses `ThetaConnectionManager` which provides:
-    - Automatic ThetaTerminal startup and shutdown
+    - Automatic ThetaTerminalv3 startup and shutdown
     - Intelligent process detection and cleanup
-    - Proper credential handling without shell escaping issues
+    - ThetaTerminalv3 credentials file handling (`creds.txt`)
+    - v3 API endpoint compatibility (port 25503)
+    - Stale process detection and cleanup
     - Comprehensive error reporting and connection verification
     - Signal handling for clean exits
 *   **Caching:** The first run fetches all historical trading days and caches them in `market_days_cache.json` for instant lookups.
