@@ -72,19 +72,18 @@ The platform requires several Python packages for data processing, API connectiv
 
 ```bash
 # Core dependencies
-pip3 install aiohttp>=3.12.13 numpy~=1.26.4 pandas>=2.3.0 pandas-ta>=0.3.14b python-dotenv>=1.0.1 thetadata==0.9.11 yfinance>=0.2.63 python-dateutil>=2.8.2 requests psutil
+pip3 install httpx numpy~=1.26.4 pandas>=2.3.0 pandas-ta>=0.3.14b python-dotenv>=1.0.1 thetadata==0.9.11 yfinance>=0.2.63 python-dateutil>=2.8.2 psutil
 ```
 
 **Package Purposes:**
-- `aiohttp` - Async HTTP client for API requests
+- `httpx` - A modern HTTP client for Python, used for all ThetaData API v3 requests.
 - `numpy` - Numerical computing foundation
 - `pandas` - Data manipulation and analysis
 - `pandas-ta` - Technical analysis indicators
 - `python-dotenv` - Environment variable management
-- `thetadata` - ThetaData API client library
+- `thetadata` - ThetaData API client library (Note: not used for v3 API calls)
 - `yfinance` - Yahoo Finance data fallback
 - `python-dateutil` - Date/time parsing utilities
-- `requests` - HTTP library for API calls
 - `psutil` - System process management (for ThetaTerminal)
 
 #### macOS Setup Notes
@@ -138,7 +137,7 @@ If you encounter pip installation issues on macOS:
     - Automatic ThetaTerminalv3 startup and shutdown
     - Intelligent process detection and cleanup
     - ThetaTerminalv3 credentials file handling (`creds.txt`)
-    - v3 API endpoint compatibility (port 25503)
+    - v3 API endpoint compatibility (port 25503) and request logic
     - Stale process detection and cleanup
     - Comprehensive error reporting and connection verification
     - Signal handling for clean exits
