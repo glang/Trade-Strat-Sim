@@ -27,7 +27,8 @@ class ThetaConnectionManager:
         self.jar_path = self.project_root / "ThetaTerminalv3.jar"
         self.env_path = self.project_root / ".env"
         self.process: Optional[subprocess.Popen] = None
-        self.api_base = "http://127.0.0.1:25510"
+        # ThetaTerminalv3 uses port 25503 instead of 25510
+        self.api_base = "http://127.0.0.1:25503"
         
         # Load environment variables
         if self.env_path.exists():
@@ -89,15 +90,25 @@ class ThetaConnectionManager:
                 f"Please check {self.env_path}"
             )
     
+    def _create_credentials_file(self) -> Path:
+        """Create credentials file for ThetaTerminalv3."""
+        creds_file = self.project_root / "creds.txt"
+        with open(creds_file, 'w') as f:
+            f.write(f"{self.username}\n{self.password}\n")
+        return creds_file
+    
     def _start_theta_process(self, quiet: bool = False) -> bool:
         """Start ThetaTerminal process."""
         if not quiet:
             print("🚀 Starting ThetaTerminal process...")
         
         try:
-            # Start process with proper credential handling
+            # Create credentials file for ThetaTerminalv3
+            creds_file = self._create_credentials_file()
+            
+            # Start process with credentials file
             self.process = subprocess.Popen(
-                ["java", "-jar", str(self.jar_path), self.username, self.password],
+                ["java", "-jar", str(self.jar_path), "--creds-file", str(creds_file)],
                 cwd=self.project_root,
                 stdout=subprocess.DEVNULL if quiet else None,
                 stderr=subprocess.DEVNULL if quiet else None,
@@ -251,6 +262,14 @@ class ThetaConnectionManager:
                     pass
             finally:
                 self.process = None
+        
+        # Clean up credentials file
+        creds_file = self.project_root / "creds.txt"
+        if creds_file.exists():
+            try:
+                creds_file.unlink()
+            except OSError:
+                pass
     
     def is_connected(self) -> bool:
         """Check if ThetaTerminal is currently connected."""
