@@ -34,26 +34,32 @@ from .market_days_cache import (
 )
 
 # --- Constants ---
-THETADATA_API_BASE = "http://127.0.0.1:25510"
+THETADATA_API_BASE = "http://localhost:25503"
 ENTRY_TIME_MS = 36000000  # 10:00 AM EST for precise entry price
 
 def get_expirations_available_on_date(symbol: str, date_str: str, quiet: bool = False) -> List[datetime.date]:
     if not quiet: print(f"🔍 Getting available expirations for {symbol} on {date_str}")
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/list/contracts/option/quote?root={symbol}&start_date={date_str}"'
+    # This endpoint is tricky. The v3 equivalent is /v3/option/list/contracts/trade?date=...
+    # which is less direct. The old v2 endpoint is more efficient if it works.
+    # For now, we will adapt to the primary v3 expirations list and filter by trade date later.
+    cmd = f'curl -s "{THETADATA_API_BASE}/v3/option/list/expirations?symbol={symbol}&format=json"'
     data = api_call(cmd, quiet=quiet)
-    if not data or 'response' not in data:
-        if not quiet: print(f"❌ No data returned for {symbol} on {date_str}")
+    
+    # Since the new endpoint doesn't filter by date, we'd need a way to check tradable contracts for that day.
+    # This is a placeholder for a more complex logic that might be needed.
+    # For now, we assume all listed expirations were available.
+    if not data or 'expiration' not in data:
+        if not quiet: print(f"❌ No expirations returned for {symbol}")
         return []
+    
     expiration_set = set()
-    for contract in data['response']:
+    for exp_str in data['expiration']:
         try:
-            if len(contract) >= 2:
-                exp_str = str(contract[1])
-                if len(exp_str) == 8 and exp_str.isdigit():
-                    exp_date = datetime.strptime(exp_str, '%Y%m%d').date()
-                    expiration_set.add(exp_date)
-        except (ValueError, IndexError, TypeError):
+            exp_date = datetime.strptime(exp_str, '%Y-%m-%d').date()
+            expiration_set.add(exp_date)
+        except (ValueError, TypeError):
             continue
+            
     expirations = sorted(list(expiration_set))
     if not quiet: print(f"✅ Found {len(expirations)} unique expiration dates")
     return expirations
@@ -85,6 +91,14 @@ def api_call(cmd: str, quiet: bool = False) -> dict:
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
         if result.returncode == 0 and result.stdout and not result.stdout.startswith(':'):
+            # Check for JSON array response
+            if result.stdout.strip().startswith('[') and result.stdout.strip().endswith(']'):
+                 # Handle simple JSON array of strings (like expirations)
+                parsed_data = json.loads(result.stdout)
+                if all(isinstance(item, str) for item in parsed_data):
+                    return {'expiration': parsed_data} # Wrap in a dict to match expected structure
+                return {'response': parsed_data} # Otherwise, wrap in response key
+            # Assume JSON object response
             return json.loads(result.stdout)
     except Exception as e:
         if not quiet: print(f"⚠️  ThetaData API error: {str(e)}")
@@ -99,25 +113,30 @@ def detect_stock_split(symbol: str, entry_date: str, exit_date: str) -> Dict[str
     return {'has_split': False}
 
 def get_january_expirations(symbol: str, year: int, entry_date: str, quiet: bool = False) -> List[str]:
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/list/expirations?root={symbol}"'
+    cmd = f'curl -s "{THETADATA_API_BASE}/v3/option/list/expirations?symbol={symbol}&format=json"'
     data = api_call(cmd, quiet=quiet)
-    if not data or 'response' not in data:
+    if not data or 'expiration' not in data:
         return []
+    
     entry_dt = datetime.strptime(entry_date, '%Y%m%d')
     target_year = year + 1
     january_exps = []
-    for exp in data['response']:
+
+    for exp_str in data['expiration']:
         try:
-            exp_dt = datetime.strptime(str(exp), '%Y%m%d')
+            # New format is YYYY-MM-DD
+            exp_dt = datetime.strptime(exp_str, '%Y-%m-%d')
             if exp_dt.year == target_year and exp_dt.month == 1 and exp_dt > entry_dt:
-                january_exps.append(str(exp))
-        except:
+                # Convert back to YYYYMMDD for consistency in the rest of the script
+                january_exps.append(exp_dt.strftime('%Y%m%d'))
+        except ValueError:
             continue
+            
     return sorted(january_exps)
 
 def get_bulk_eod_data(symbol: str, exp: str, start_date: str, end_date: str, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"⚡ Bulk EOD: {symbol} {exp} from {start_date} to {end_date}")
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/bulk_hist/option/eod?root={symbol}&exp={exp}&start_date={start_date}&end_date={end_date}&rth=true"'
+    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_hist/option/eod?root={symbol}&exp={exp}&start_date={start_date}&end_date={end_date}&rth=true"'
     data = api_call(cmd, quiet=quiet)
     if data and 'response' in data:
         if not quiet: print(f"✅ Bulk EOD returned {len(data['response'])} records")
@@ -127,7 +146,7 @@ def get_bulk_eod_data(symbol: str, exp: str, start_date: str, end_date: str, qui
 
 def get_bulk_eod_greeks(symbol: str, exp: str, date: str, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"📈 Bulk EOD Greeks: {symbol} {exp} on {date}")
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/bulk_hist/option/eod_greeks?root={symbol}&exp={exp}&start_date={date}&end_date={date}"'
+    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_hist/option/eod_greeks?root={symbol}&exp={exp}&start_date={date}&end_date={date}"'
     data = api_call(cmd, quiet=quiet)
     if data and 'response' in data:
         if not quiet: print(f"✅ Bulk EOD Greeks returned {len(data['response'])} records")
@@ -177,7 +196,7 @@ def filter_itm_calls_from_bulk(bulk_data: Dict[str, Any], stock_price: float, qu
 
 def get_bulk_at_time_quotes(symbol: str, exp: str, date: str, target_time_ms: int, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"⚡ Bulk At-Time: {symbol} {exp} at {date} {target_time_ms}ms")
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/bulk_at_time/option/quote?root={symbol}&exp={exp}&start_date={date}&end_date={date}&ivl={target_time_ms}&rth=true"'
+    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_at_time/option/quote?root={symbol}&exp={exp}&start_date={date}&end_date={date}&ivl={target_time_ms}&rth=true"'
     data = api_call(cmd, quiet=quiet)
     if data and 'response' in data:
         if not quiet: print(f"✅ Bulk At-Time returned {len(data['response'])} quotes")
@@ -210,7 +229,7 @@ def extract_precise_entry_price_from_bulk(bulk_quotes: Dict[str, Any], target_st
 
 def get_exit_price_individual(symbol: str, exp_date: str, exit_strike: float, exit_date: str, quiet: bool = False) -> Optional[float]:
     if not quiet: print(f"📊 Exit pricing: {symbol} {exp_date} ${exit_strike/1000:.2f} on {exit_date}")
-    cmd = f'curl -s "{THETADATA_API_BASE}/v2/hist/option/eod?root={symbol}&exp={exp_date}&strike={exit_strike}&right=C&start_date={exit_date}&end_date={exit_date}"'
+    cmd = f'curl -s "http://127.0.0.1:25510/v2/hist/option/eod?root={symbol}&exp={exp_date}&strike={exit_strike}&right=C&start_date={exit_date}&end_date={exit_date}"'
     exit_data = api_call(cmd, quiet=quiet)
     if exit_data and 'response' in exit_data and exit_data['response']:
         exit_record = exit_data['response'][0]
@@ -499,7 +518,7 @@ def display_comparison_results(annual_results: List[Dict], quarterly_results: Li
         if quarterly_data:
             summary = quarterly_data['yearly_summary']
             win_rate = (summary['winning_trades'] / summary['total_trades']) * 100 if summary['total_trades'] > 0 else 0
-            quarterly_str = (f"{'':<6} | {'Quarterly':<11} | {summary.get('yearly_return_pct', 0):>7.1f}% | {summary.get('avg_entry_delta', 0):>8.2f} | {summary.get('avg_exit_delta', 0):>8.2f} | {summary.get('avg_entry_iv', 0):>8.3f} | {summary.get('avg_exit_iv', 0):>8.3f} | {summary['total_trades']:>7} | {win_rate:>8.1f}%")
+            quarterly_str = (f"{'':<6} | {'Quarterly':<11} | {summary.get('yearly_return_pct', 0):>7.1f}% | {summary.get('avg_entry_delta', 0):>8.2f} | {summary.get('avg_exit_delta', 0):>8.2f} | {summary.get('avg_entry_iv', 0):>8.3f} | {summary.get('avg_exit_iv', 0):>8.3f} | {summary['total_trades']:>7} | {win_rate:>8.1f}% ")
             print(quarterly_str)
         print("-" * 120)
     print("\n📊 SUMMARY STATISTICS")
