@@ -62,13 +62,9 @@ cp .env.example .env
 ```
 
 **ThetaTerminalv3 Credentials Setup:**
-After setting up your `.env` file, create a credentials file for ThetaTerminal:
-```bash
-# Create creds.txt from your .env variables
-source .env && echo "$THETADATA_USERNAME" > creds.txt && echo "$THETADATA_PASSWORD" >> creds.txt
-```
+After setting up your `.env` file, the system will automatically create a credentials file for ThetaTerminal when needed. The credentials are managed by the robust connection system which handles authentication seamlessly.
 
-**Note:** The `creds.txt` file is automatically excluded from git commits via `.gitignore` to protect your credentials.
+**Note:** The automatically generated `creds.txt` file is excluded from git commits via `.gitignore` to protect your credentials.
 
 ### c. Install Dependencies
 
@@ -132,22 +128,38 @@ python3 scripts/run_strike_comparison_backtest.py
 python3 scripts/run_simple_pmcc_test.py --year 2023
 ```
 
+**Connection Management and Troubleshooting:**
+```bash
+# Test ThetaTerminal connection
+python3 scripts/theta_connection_test.py --test
+
+# Diagnose connection issues
+python3 scripts/theta_connection_test.py --diagnose
+
+# Force restart if experiencing problems
+python3 scripts/theta_connection_test.py --restart
+
+# Show detailed system status
+python3 scripts/theta_connection_test.py --status
+```
+
 ## 5. System Architecture
 
 ### Core Components
 * **`src/backtesting_engine/`**: The core Python package containing all logic for data handling, option selection, capital management, and trade execution.
-* **`scripts/`**: Contains the runnable backtesting scripts, including `run_gemini_backtest.py`, `run_claude_backtest.py`, `run_strike_comparison_backtest.py`, and `run_simple_pmcc_test.py`.
-* **`CLAUDE.md` / `GTC.md`**: Project documentation and planning files.
+* **`scripts/`**: Contains the runnable backtesting scripts and utilities.
+* **`CLAUDE.md`**: Project documentation and implementation guide.
 * **`ThetaTerminalv3.jar`**: The Java application required to connect to the ThetaData v3 API.
 
 ### ThetaData v3 API Integration
 The platform has been **fully migrated to ThetaData v3 API** with the following modern architecture:
 
-**Connection Management:**
-- **Automatic ThetaTerminalv3 startup** with credentials file handling (`creds.txt`)
-- **Port 25503** connectivity with v3 API endpoints (`/v3/*`)
-- **Process detection and cleanup** with stale session handling
-- **Comprehensive error reporting** and connection verification
+**Robust Connection Management:**
+- **Intelligent ThetaTerminalv3 startup** with automatic credentials handling
+- **Port 25503** connectivity with comprehensive conflict resolution
+- **Process lifecycle management** with graceful→force→port cleanup sequence
+- **Connection diagnostics** with detailed issue detection and recovery
+- **Force restart capability** for handling stubborn connection problems
 
 **API Communication:**
 - **Primary HTTP Client**: `httpx` library for all API requests (as per ThetaData documentation)
@@ -162,6 +174,13 @@ The platform has been **fully migrated to ThetaData v3 API** with the following 
 - **Caching**: Historical trading days cached in `market_days_cache.json`
 
 ### Advanced Features
+
+**Connection Management System:**
+- **Automatic startup detection**: Identifies existing ThetaTerminal processes
+- **Port conflict resolution**: Forcefully clears port 25503 when necessary  
+- **Progressive timeouts**: Adaptive connection timeouts up to 60 seconds
+- **Diagnostic capabilities**: `theta_connection_test.py` utility for troubleshooting
+- **Recovery mechanisms**: Force restart and cleanup functions
 
 **MCP (Model Context Protocol) Server Discovery:**
 - **Endpoint**: `http://localhost:25503/mcp/sse` (Server-Sent Events)
@@ -223,7 +242,44 @@ with httpx.Client(timeout=60) as client:
 4. Use `api_call_csv()` for standard CSV response parsing
 5. Test with known working examples before implementing complex logic
 
-## 7. Testing and Validation
+## 7. Connection Management and Troubleshooting
+
+The platform includes robust connection management with comprehensive troubleshooting capabilities:
+
+### Connection Test Utility (`theta_connection_test.py`)
+
+This utility provides command-line tools for managing ThetaTerminal connections:
+
+```bash
+# Test connection (default action)
+python3 scripts/theta_connection_test.py
+
+# Run specific tests
+python3 scripts/theta_connection_test.py --test      # Connection test
+python3 scripts/theta_connection_test.py --diagnose # Issue diagnosis
+python3 scripts/theta_connection_test.py --restart  # Force restart
+python3 scripts/theta_connection_test.py --status   # Detailed status
+python3 scripts/theta_connection_test.py --cleanup  # Clean resources
+```
+
+### Common Connection Issues and Solutions
+
+**Port Binding Conflicts:**
+- Automatic detection of processes using port 25503
+- Graceful termination followed by force kill if necessary
+- Port cleanup using system-level process identification
+
+**Stale Process Detection:**
+- Intelligent identification of unresponsive ThetaTerminal processes
+- Automatic cleanup of zombie processes
+- Fresh startup after complete resource cleanup
+
+**Connection Timeout Issues:**
+- Progressive timeout strategy (60s maximum)
+- Detailed diagnostic information during failures
+- Automatic retry with enhanced error reporting
+
+## 8. Testing and Validation
 
 The platform includes comprehensive testing capabilities:
 
@@ -245,4 +301,9 @@ The platform includes comprehensive testing capabilities:
 - Market hours validation and trading day verification
 - API error handling with detailed logging
 
-The platform is production-ready for comprehensive LEAPS and PMCC strategy analysis with institutional-grade data accuracy and processing capabilities.
+**Connection Reliability:**
+- Automated startup and connection management
+- Comprehensive error recovery mechanisms
+- Production-ready reliability for unattended operation
+
+The platform is production-ready for comprehensive LEAPS and PMCC strategy analysis with institutional-grade data accuracy, robust connection management, and comprehensive troubleshooting capabilities.
