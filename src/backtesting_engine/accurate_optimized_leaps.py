@@ -13,6 +13,7 @@ import json
 import time
 import os
 import requests
+import httpx
 import argparse
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -34,16 +35,22 @@ from .market_days_cache import (
 )
 
 # --- Constants ---
-THETADATA_API_BASE = "http://localhost:25503"
+THETADATA_API_BASE = "http://localhost:25503/v3"
 ENTRY_TIME_MS = 36000000  # 10:00 AM EST for precise entry price
+
+def format_date_for_api(date_str: str) -> str:
+    """Convert YYYYMMDD format to YYYY-MM-DD format for API calls"""
+    if len(date_str) == 8 and date_str.isdigit():
+        return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+    return date_str  # Already in correct format or other format
 
 def get_expirations_available_on_date(symbol: str, date_str: str, quiet: bool = False) -> List[datetime.date]:
     if not quiet: print(f"🔍 Getting available expirations for {symbol} on {date_str}")
-    # This endpoint is tricky. The v3 equivalent is /v3/option/list/contracts/trade?date=...
-    # which is less direct. The old v2 endpoint is more efficient if it works.
-    # For now, we will adapt to the primary v3 expirations list and filter by trade date later.
-    cmd = f'curl -s "{THETADATA_API_BASE}/v3/option/list/expirations?symbol={symbol}&format=json"'
-    data = api_call(cmd, quiet=quiet)
+    
+    # Use v3 API endpoint with httpx
+    url = f"{THETADATA_API_BASE}/option/list/expirations"
+    params = {"symbol": symbol, "format": "json"}
+    data = api_call(url, params, quiet=quiet)
     
     # Since the new endpoint doesn't filter by date, we'd need a way to check tradable contracts for that day.
     # This is a placeholder for a more complex logic that might be needed.
@@ -87,22 +94,45 @@ def ensure_theta_terminal_running(quiet: bool = False) -> bool:
     from .theta_connection_manager import ensure_theta_terminal_connected
     return ensure_theta_terminal_connected(quiet=quiet)
 
-def api_call(cmd: str, quiet: bool = False) -> dict:
+def api_call(url: str, params: dict = None, quiet: bool = False) -> dict:
+    """Make an HTTP request to ThetaData API using httpx"""
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and result.stdout and not result.stdout.startswith(':'):
-            # Check for JSON array response
-            if result.stdout.strip().startswith('[') and result.stdout.strip().endswith(']'):
-                 # Handle simple JSON array of strings (like expirations)
-                parsed_data = json.loads(result.stdout)
-                if all(isinstance(item, str) for item in parsed_data):
-                    return {'expiration': parsed_data} # Wrap in a dict to match expected structure
-                return {'response': parsed_data} # Otherwise, wrap in response key
-            # Assume JSON object response
-            return json.loads(result.stdout)
+        with httpx.Client(timeout=60) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            
+            if response.text and not response.text.startswith(':'):
+                # Check for JSON array response
+                if response.text.strip().startswith('[') and response.text.strip().endswith(']'):
+                    # Handle simple JSON array of strings (like expirations)
+                    parsed_data = response.json()
+                    if all(isinstance(item, str) for item in parsed_data):
+                        return {'expiration': parsed_data}  # Wrap in a dict to match expected structure
+                    return {'response': parsed_data}  # Otherwise, wrap in response key
+                # Assume JSON object response
+                return response.json()
     except Exception as e:
         if not quiet: print(f"⚠️  ThetaData API error: {str(e)}")
     return {}
+
+def api_call_csv(url: str, params: dict = None, quiet: bool = False) -> list:
+    """Make an HTTP request to ThetaData API using httpx and parse CSV response"""
+    import csv
+    try:
+        with httpx.Client(timeout=60) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            
+            # Parse CSV response as per documentation
+            csv_reader = csv.reader(response.text.split("\n"))
+            data = []
+            for row in csv_reader:
+                if row:  # Skip empty rows
+                    data.append(row)
+            return data
+    except Exception as e:
+        if not quiet: print(f"⚠️  ThetaData API error: {str(e)}")
+    return []
 
 def detect_stock_split(symbol: str, entry_date: str, exit_date: str) -> Dict[str, Any]:
     splits = {"GOOG": {"20220715": {"ratio": 20, "description": "GOOG 20:1 stock split"}}}
@@ -113,8 +143,9 @@ def detect_stock_split(symbol: str, entry_date: str, exit_date: str) -> Dict[str
     return {'has_split': False}
 
 def get_january_expirations(symbol: str, year: int, entry_date: str, quiet: bool = False) -> List[str]:
-    cmd = f'curl -s "{THETADATA_API_BASE}/v3/option/list/expirations?symbol={symbol}&format=json"'
-    data = api_call(cmd, quiet=quiet)
+    url = f"{THETADATA_API_BASE}/option/list/expirations"
+    params = {"symbol": symbol, "format": "json"}
+    data = api_call(url, params, quiet=quiet)
     if not data or 'expiration' not in data:
         return []
     
@@ -136,33 +167,63 @@ def get_january_expirations(symbol: str, year: int, entry_date: str, quiet: bool
 
 def get_bulk_eod_data(symbol: str, exp: str, start_date: str, end_date: str, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"⚡ Bulk EOD: {symbol} {exp} from {start_date} to {end_date}")
-    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_hist/option/eod?root={symbol}&exp={exp}&start_date={start_date}&end_date={end_date}&rth=true"'
-    data = api_call(cmd, quiet=quiet)
-    if data and 'response' in data:
-        if not quiet: print(f"✅ Bulk EOD returned {len(data['response'])} records")
-        return data
+    url = f"{THETADATA_API_BASE}/option/history/eod"
+    # Convert expiration and dates to proper format
+    exp_formatted = format_date_for_api(exp)
+    start_formatted = format_date_for_api(start_date)
+    end_formatted = format_date_for_api(end_date)
+    
+    params = {
+        "symbol": symbol,
+        "expiration": exp_formatted,
+        "start_date": start_formatted,
+        "end_date": end_formatted
+    }
+    # Use CSV format as per documentation
+    response = api_call_csv(url, params, quiet=quiet)
+    if response:
+        if not quiet: print(f"✅ Bulk EOD returned {len(response)} records")
+        return {'response': response}
     if not quiet: print("❌ No bulk EOD data available")
     return {}
 
 def get_bulk_eod_greeks(symbol: str, exp: str, date: str, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"📈 Bulk EOD Greeks: {symbol} {exp} on {date}")
-    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_hist/option/eod_greeks?root={symbol}&exp={exp}&start_date={date}&end_date={date}"'
-    data = api_call(cmd, quiet=quiet)
-    if data and 'response' in data:
-        if not quiet: print(f"✅ Bulk EOD Greeks returned {len(data['response'])} records")
-        return data
+    url = f"{THETADATA_API_BASE}/option/history/greeks/eod"
+    # Convert expiration and date to proper format  
+    exp_formatted = format_date_for_api(exp)
+    date_formatted = format_date_for_api(date)
+    
+    params = {
+        "symbol": symbol,
+        "expiration": exp_formatted,
+        "start_date": date_formatted,
+        "end_date": date_formatted
+    }
+    # Use CSV format as per documentation
+    response = api_call_csv(url, params, quiet=quiet)
+    if response:
+        if not quiet: print(f"✅ Bulk EOD Greeks returned {len(response)} records")
+        return {'response': response}
     if not quiet: print(f"❌ No bulk EOD greeks data available for {symbol} {exp} on {date}")
     return {}
 
 def extract_greeks_from_bulk(bulk_greeks: Dict[str, Any], target_strike: int) -> Optional[Dict[str, float]]:
     if not bulk_greeks or 'response' not in bulk_greeks: return None
-    for contract_data in bulk_greeks['response']:
+    
+    # CSV format: each row is a list of strings
+    for row in bulk_greeks['response']:
         try:
-            contract = contract_data.get('contract', {})
-            if contract.get('strike') == target_strike:
-                tick = contract_data.get('ticks', [[]])[0]
-                if len(tick) >= 34:
-                    return {"delta": tick[15], "theta": tick[16], "vega": tick[17], "gamma": tick[21], "iv": tick[33]}
+            if len(row) < 34: continue
+            # Parse CSV fields - adjust indices based on actual CSV format for Greeks
+            strike = float(row[3])  # Strike price
+            if strike == target_strike:
+                delta = float(row[15]) if row[15] else 0
+                theta = float(row[16]) if row[16] else 0
+                vega = float(row[17]) if row[17] else 0
+                gamma = float(row[21]) if row[21] else 0
+                iv = float(row[33]) if row[33] else 0
+                return {"delta": delta, "theta": theta, "vega": vega, "gamma": gamma, "iv": iv}
         except (ValueError, IndexError, TypeError):
             continue
     return None
@@ -170,24 +231,30 @@ def extract_greeks_from_bulk(bulk_greeks: Dict[str, Any], target_strike: int) ->
 def filter_itm_calls_from_bulk(bulk_data: Dict[str, Any], stock_price: float, quiet: bool = False) -> List[Dict[str, Any]]:
     if not bulk_data or 'response' not in bulk_data: return []
     valid_calls = []
-    stock_price_millidollars = stock_price * 1000
-    for contract_data in bulk_data['response']:
+    stock_price_dollars = stock_price  # Stock price in dollars, not millidollars
+    
+    # CSV format: skip header row if present
+    rows = bulk_data['response']
+    start_index = 1 if rows and rows[0][0] == 'symbol' else 0
+    
+    for row in rows[start_index:]:
         try:
-            contract = contract_data.get('contract', {})
-            ticks = contract_data.get('ticks', [])
-            if not ticks or not contract: continue
-            strike = contract.get('strike', 0)
-            right = contract.get('right', '')
-            tick = ticks[0]
-            if len(tick) < 17: continue
-            close_price = tick[5] if tick[5] else 0
-            bid = tick[10] if tick[10] else 0
-            ask = tick[14] if tick[14] else 0
-            if right != 'C': continue
-            if strike < stock_price_millidollars:
+            if len(row) < 19: continue
+            # Parse CSV fields based on actual CSV format from ThetaData v3 API
+            # Columns: symbol,expiration,strike,right,created,last_trade,open,high,low,close,volume,count,bid_size,bid_exchange,bid,bid_condition,ask_size,ask_exchange,ask,ask_condition
+            strike = float(row[2])  # Strike price (column 2)
+            right = row[3]  # Option type (column 3: PUT/CALL)
+            close_price = float(row[9]) if row[9] else 0  # Close price (column 9)
+            bid = float(row[14]) if row[14] else 0  # Bid price (column 14)
+            ask = float(row[18]) if row[18] else 0  # Ask price (column 18)
+            
+            if right != 'CALL': continue
+            if strike < stock_price_dollars:
                 if close_price > 0 or (bid > 0 and ask > 0):
-                    distance = abs(strike - stock_price_millidollars)
-                    valid_calls.append({'strike': strike, 'distance': distance, 'close': close_price, 'bid': bid, 'ask': ask, 'data_quality': 'excellent' if close_price > 0 else 'good'})
+                    distance = abs(strike - stock_price_dollars)
+                    # Convert to millidollars for consistency with existing code
+                    strike_millidollars = strike * 1000
+                    valid_calls.append({'strike': strike_millidollars, 'distance': distance * 1000, 'close': close_price, 'bid': bid, 'ask': ask, 'data_quality': 'excellent' if close_price > 0 else 'good'})
         except (ValueError, IndexError, TypeError):
             continue
     valid_calls.sort(key=lambda x: x['distance'])
@@ -196,27 +263,53 @@ def filter_itm_calls_from_bulk(bulk_data: Dict[str, Any], stock_price: float, qu
 
 def get_bulk_at_time_quotes(symbol: str, exp: str, date: str, target_time_ms: int, quiet: bool = False) -> Dict[str, Any]:
     if not quiet: print(f"⚡ Bulk At-Time: {symbol} {exp} at {date} {target_time_ms}ms")
-    cmd = f'curl -s "http://127.0.0.1:25510/v2/bulk_at_time/option/quote?root={symbol}&exp={exp}&start_date={date}&end_date={date}&ivl={target_time_ms}&rth=true"'
-    data = api_call(cmd, quiet=quiet)
-    if data and 'response' in data:
-        if not quiet: print(f"✅ Bulk At-Time returned {len(data['response'])} quotes")
-        return data
+    
+    # Convert milliseconds to HH:MM:SS.mmm format for v3 API
+    hours = target_time_ms // 3600000
+    minutes = (target_time_ms % 3600000) // 60000
+    seconds = (target_time_ms % 60000) // 1000
+    milliseconds = target_time_ms % 1000
+    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+    
+    # Convert expiration and date to proper format
+    exp_formatted = format_date_for_api(exp)
+    date_formatted = format_date_for_api(date)
+    
+    url = f"{THETADATA_API_BASE}/option/at_time/quote"
+    params = {
+        "symbol": symbol,
+        "expiration": exp_formatted,
+        "start_date": date_formatted,
+        "end_date": date_formatted,
+        "time_of_day": time_str
+    }
+    # Use CSV format as per documentation
+    response = api_call_csv(url, params, quiet=quiet)
+    if response:
+        if not quiet: print(f"✅ Bulk At-Time returned {len(response)} quotes")
+        return {'response': response}
     if not quiet: print("❌ No bulk at-time data available")
     return {}
 
 def extract_precise_entry_price_from_bulk(bulk_quotes: Dict[str, Any], target_strike: float, quiet: bool = False) -> Optional[float]:
     if not bulk_quotes or 'response' not in bulk_quotes: return None
-    for contract_data in bulk_quotes['response']:
+    
+    # CSV format: skip header row if present
+    rows = bulk_quotes['response']
+    start_index = 1 if rows and rows[0][0] == 'symbol' else 0
+    target_strike_dollars = target_strike / 1000  # Convert from millidollars to dollars
+    
+    for row in rows[start_index:]:
         try:
-            contract = contract_data.get('contract', {})
-            ticks = contract_data.get('ticks', [])
-            if not ticks or not contract: continue
-            strike = contract.get('strike', 0)
-            right = contract.get('right', '')
-            tick = ticks[0]
-            if strike == target_strike and right == 'C' and len(tick) >= 8:
-                bid = tick[3] if tick[3] else 0
-                ask = tick[7] if tick[7] else 0
+            if len(row) < 13: continue
+            # Parse CSV fields based on actual CSV format for at-time quotes
+            # Columns: symbol,expiration,strike,right,timestamp,bid_size,bid_exchange,bid,bid_condition,ask_size,ask_exchange,ask,ask_condition
+            strike = float(row[2])  # Strike price (column 2)
+            right = row[3]  # Option type (column 3: PUT/CALL)
+            
+            if abs(strike - target_strike_dollars) < 0.01 and right == 'CALL':
+                bid = float(row[7]) if row[7] else 0  # Bid price (column 7)
+                ask = float(row[11]) if row[11] else 0  # Ask price (column 11)
                 if ask > 0:
                     if not quiet: print(f"   ✅ Precise entry price: ${ask:.2f} (ask)")
                     return ask
@@ -229,22 +322,43 @@ def extract_precise_entry_price_from_bulk(bulk_quotes: Dict[str, Any], target_st
 
 def get_exit_price_individual(symbol: str, exp_date: str, exit_strike: float, exit_date: str, quiet: bool = False) -> Optional[float]:
     if not quiet: print(f"📊 Exit pricing: {symbol} {exp_date} ${exit_strike/1000:.2f} on {exit_date}")
-    cmd = f'curl -s "http://127.0.0.1:25510/v2/hist/option/eod?root={symbol}&exp={exp_date}&strike={exit_strike}&right=C&start_date={exit_date}&end_date={exit_date}"'
-    exit_data = api_call(cmd, quiet=quiet)
-    if exit_data and 'response' in exit_data and exit_data['response']:
-        exit_record = exit_data['response'][0]
-        if len(exit_record) >= 17:
-            close_price = exit_record[5] if exit_record[5] else 0
-            bid_price = exit_record[10] if exit_record[10] else 0
-            if close_price > 0:
-                if not quiet: print(f"   ✅ Exit price: ${close_price:.2f} (close)")
-                return close_price
-            elif bid_price > 0:
-                if not quiet: print(f"   ✅ Exit price: ${bid_price:.2f} (bid)")
-                return bid_price
-            elif close_price == 0:
-                if not quiet: print(f"   ✅ Exit price: $0.00 (worthless)")
-                return 0.0
+    url = f"{THETADATA_API_BASE}/option/history/eod"
+    # Convert expiration and date to proper format
+    exp_formatted = format_date_for_api(exp_date)
+    date_formatted = format_date_for_api(exit_date)
+    
+    # Use bulk approach without specifying strike/right to avoid 472 errors
+    params = {
+        "symbol": symbol,
+        "expiration": exp_formatted,
+        "start_date": date_formatted,
+        "end_date": date_formatted
+    }
+    # Use CSV format as per documentation
+    response = api_call_csv(url, params, quiet=quiet)
+    if response and len(response) > 1:  # Check we have more than just header
+        exit_strike_dollars = exit_strike / 1000  # Convert from millidollars to dollars
+        
+        # Skip header row
+        for row in response[1:]:
+            if len(row) >= 19:
+                # Parse CSV fields based on EOD format
+                # Columns: symbol,expiration,strike,right,created,last_trade,open,high,low,close,volume,count,bid_size,bid_exchange,bid,bid_condition,ask_size,ask_exchange,ask,ask_condition
+                strike = float(row[2])
+                right = row[3]
+                close_price = float(row[9]) if row[9] else 0
+                bid_price = float(row[14]) if row[14] else 0
+                
+                if abs(strike - exit_strike_dollars) < 0.01 and right == 'CALL':
+                    if close_price > 0:
+                        if not quiet: print(f"   ✅ Exit price: ${close_price:.2f} (close)")
+                        return close_price
+                    elif bid_price > 0:
+                        if not quiet: print(f"   ✅ Exit price: ${bid_price:.2f} (bid)")
+                        return bid_price
+                    elif close_price == 0:
+                        if not quiet: print(f"   ✅ Exit price: $0.00 (worthless)")
+                        return 0.0
     return None
 
 def find_optimal_leaps_annual_january(symbol: str, year: int, entry_date: str, exit_date: str, stock_price: float, quiet: bool = False) -> Optional[Dict[str, Any]]:
