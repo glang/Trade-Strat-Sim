@@ -63,7 +63,7 @@ class ThetaConnectionManager:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if proc.info['name'] and 'java' in proc.info['name'].lower():
-                    cmdline = proc.info.get('cmdline', [])
+                    cmdline = proc.info.get('cmdline') or []
                     if any('ThetaTerminal' in str(arg) for arg in cmdline):
                         return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -336,7 +336,7 @@ class ThetaConnectionManager:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if proc.info['name'] and 'java' in proc.info['name'].lower():
-                    cmdline = proc.info.get('cmdline', [])
+                    cmdline = proc.info.get('cmdline') or []
                     if any('ThetaTerminal' in str(arg) for arg in cmdline):
                         processes_to_kill.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
