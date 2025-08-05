@@ -12,8 +12,9 @@ import time
 import json
 import signal
 import psutil
-import requests
+import httpx
 import subprocess
+import socket
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
@@ -28,7 +29,8 @@ class ThetaConnectionManager:
         self.env_path = self.project_root / ".env"
         self.process: Optional[subprocess.Popen] = None
         # ThetaTerminalv3 uses port 25503 with v3 API structure
-        self.api_base = "http://127.0.0.1:25503/v3"
+        self.api_base = "http://localhost:25503/v3"
+        self.port = 25503
         
         # Load environment variables
         if self.env_path.exists():
@@ -62,22 +64,96 @@ class ThetaConnectionManager:
             try:
                 if proc.info['name'] and 'java' in proc.info['name'].lower():
                     cmdline = proc.info.get('cmdline', [])
-                    if any('ThetaTerminal.jar' in str(arg) for arg in cmdline):
+                    if any('ThetaTerminal' in str(arg) for arg in cmdline):
                         return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return False
     
+    def _is_port_in_use(self, port: int) -> bool:
+        """Check if a port is currently in use."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            result = sock.connect_ex(('localhost', port))
+            return result == 0
+    
+    def _wait_for_port_free(self, port: int, max_wait: int = 10, quiet: bool = False) -> bool:
+        """Wait for a port to become available."""
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            if not self._is_port_in_use(port):
+                return True
+            if not quiet:
+                elapsed = time.time() - start_time
+                if elapsed % 2 == 0:  # Print every 2 seconds
+                    print(f"⏳ Waiting for port {port} to become available... ({elapsed:.0f}s)")
+            time.sleep(0.5)
+        return False
+    
+    def _force_kill_port_users(self, port: int, quiet: bool = False) -> bool:
+        """Force kill any processes using the specified port."""
+        try:
+            import subprocess
+            
+            # Find processes using the port
+            result = subprocess.run(['ss', '-tulpn'], capture_output=True, text=True)
+            if result.returncode != 0:
+                return False
+            
+            processes_to_kill = []
+            for line in result.stdout.split('\n'):
+                if f':{port}' in line and 'LISTEN' in line:
+                    # Extract PID from ss output (format: users:(("java",pid=12345,fd=58)))
+                    if 'users:' in line:
+                        user_part = line.split('users:')[1]
+                        if 'pid=' in user_part:
+                            try:
+                                pid_str = user_part.split('pid=')[1].split(',')[0]
+                                pid = int(pid_str)
+                                processes_to_kill.append(pid)
+                            except (ValueError, IndexError):
+                                continue
+            
+            if not processes_to_kill:
+                return True
+            
+            if not quiet:
+                print(f"💀 Force killing {len(processes_to_kill)} processes using port {port}")
+            
+            # Kill the processes
+            for pid in processes_to_kill:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                    if not quiet:
+                        print(f"   Killed PID {pid}")
+                except (ProcessLookupError, OSError):
+                    continue
+            
+            # Wait a moment for cleanup
+            time.sleep(2)
+            return not self._is_port_in_use(port)
+            
+        except Exception as e:
+            if not quiet:
+                print(f"   Error during force kill: {e}")
+            return False
+    
     def _check_api_connection(self, timeout: int = 5) -> bool:
         """Check if ThetaTerminal API is responsive."""
         try:
-            # Test with v3 option strikes endpoint for GOOG (first trading day of 2025)
-            response = requests.get(
-                f"{self.api_base}/option/list/strikes?symbol=GOOG&expiration=20250103&format=json", 
-                timeout=timeout
-            )
-            # Check if we got a valid response (should return strikes data)
-            return response.status_code == 200 and len(response.text.strip()) > 0
+            # Test with v3 stock EOD endpoint - simpler and more reliable
+            with httpx.Client(timeout=timeout) as client:
+                response = client.get(
+                    f"{self.api_base}/stock/history/eod",
+                    params={
+                        "symbol": "GOOG",
+                        "start_date": "2024-01-03",
+                        "end_date": "2024-01-03"
+                    }
+                )
+                # Check if we got a valid CSV response
+                return (response.status_code == 200 and 
+                       len(response.text.strip()) > 0 and 
+                       'created' in response.text)  # CSV header check
         except Exception:
             return False
     
@@ -105,8 +181,27 @@ class ThetaConnectionManager:
             print("🚀 Starting ThetaTerminal process...")
         
         try:
+            # Ensure port is free before starting
+            if self._is_port_in_use(self.port):
+                if not quiet:
+                    print(f"⚠️  Port {self.port} is still in use, cleaning up...")
+                self._kill_existing_processes(quiet=quiet)
+                
+                # Final check - if still occupied, try force cleanup
+                if self._is_port_in_use(self.port):
+                    if not quiet:
+                        print(f"🔧 Attempting emergency port cleanup...")
+                    if not self._force_kill_port_users(self.port, quiet=quiet):
+                        if not quiet:
+                            print(f"❌ Cannot start: Port {self.port} is still occupied")
+                        return False
+            
             # Create credentials file for ThetaTerminalv3
             creds_file = self._create_credentials_file()
+            
+            # Enhanced startup with better error handling
+            startup_env = os.environ.copy()
+            startup_env['JAVA_OPTS'] = '-Xmx2g -XX:+UseG1GC'  # Optimize JVM settings
             
             # Start process with credentials file
             self.process = subprocess.Popen(
@@ -114,11 +209,21 @@ class ThetaConnectionManager:
                 cwd=self.project_root,
                 stdout=subprocess.DEVNULL if quiet else None,
                 stderr=subprocess.DEVNULL if quiet else None,
+                env=startup_env,
                 preexec_fn=os.setsid  # Create new process group
             )
             
+            # Give process a moment to start
+            time.sleep(2)
+            
+            # Verify process is still running
+            if self.process.poll() is not None:
+                if not quiet:
+                    print(f"❌ ThetaTerminal process terminated immediately (exit code: {self.process.returncode})")
+                return False
+            
             if not quiet:
-                print(f"✅ ThetaTerminal process started (PID: {self.process.pid})")
+                print(f"✅ ThetaTerminal process started successfully (PID: {self.process.pid})")
             
             return True
             
@@ -127,7 +232,7 @@ class ThetaConnectionManager:
                 print(f"❌ Failed to start ThetaTerminal: {e}")
             return False
     
-    def _wait_for_connection(self, max_wait: int = 45, quiet: bool = False) -> bool:
+    def _wait_for_connection(self, max_wait: int = 60, quiet: bool = False) -> bool:
         """Wait for ThetaTerminal to establish API connection."""
         if not quiet:
             print("⏳ Waiting for ThetaTerminal to connect to servers...")
@@ -135,30 +240,41 @@ class ThetaConnectionManager:
         start_time = time.time()
         check_interval = 2
         last_status_time = 0
+        connection_attempts = 0
         
         while time.time() - start_time < max_wait:
             # Check if process died
             if self.process and self.process.poll() is not None:
                 if not quiet:
                     print("❌ ThetaTerminal process terminated unexpectedly")
+                    print(f"   Exit code: {self.process.returncode}")
                 return False
             
-            # Check API connection
-            if self._check_api_connection(timeout=3):
+            # Check API connection with progressive timeout
+            connection_attempts += 1
+            api_timeout = min(3 + (connection_attempts // 5), 10)  # Progressive timeout 3-10s
+            
+            if self._check_api_connection(timeout=api_timeout):
                 if not quiet:
                     print("✅ ThetaTerminal connected successfully!")
                 return True
             
-            # Status update every 10 seconds
+            # Status update every 10 seconds with more detail
             elapsed = time.time() - start_time
             if not quiet and elapsed - last_status_time >= 10:
-                print(f"⏳ Still waiting... ({elapsed:.0f}s elapsed)")
+                port_status = "in use" if self._is_port_in_use(self.port) else "free"
+                print(f"⏳ Still waiting... ({elapsed:.0f}s elapsed, port {self.port}: {port_status})")
                 last_status_time = elapsed
             
             time.sleep(check_interval)
         
         if not quiet:
             print(f"❌ ThetaTerminal failed to connect within {max_wait} seconds")
+            # Diagnostic information
+            print(f"   Port {self.port} status: {'in use' if self._is_port_in_use(self.port) else 'free'}")
+            print(f"   Process running: {self._is_theta_process_running()}")
+            if self.process:
+                print(f"   Process status: {'running' if self.process.poll() is None else 'terminated'}")
         return False
     
     def connect(self, quiet: bool = False) -> bool:
@@ -183,17 +299,22 @@ class ThetaConnectionManager:
                 if not quiet:
                     print("🔄 ThetaTerminal process found, checking if responsive...")
                 
-                # Give existing process a brief chance to connect (only 10 seconds)
+                # Give existing process a brief chance to connect (only 15 seconds)
                 # If it doesn't connect quickly, assume it's stale
-                if self._wait_for_connection(max_wait=10, quiet=True):
+                if self._wait_for_connection(max_wait=15, quiet=True):
                     if not quiet:
                         print("✅ Existing ThetaTerminal process connected successfully!")
                     return True
                 else:
                     if not quiet:
-                        print("⚠️  Existing process appears stale, terminating and restarting...")
+                        print("⚠️  Existing process appears stale, cleaning up and restarting...")
                     # Process exists but won't connect - it's stale, kill it
                     self._kill_existing_processes(quiet=quiet)
+                    
+                    # Extra safety: wait a bit more for full cleanup
+                    if not quiet:
+                        print("🧹 Ensuring complete cleanup...")
+                    time.sleep(3)
             
             # Start new process
             if not self._start_theta_process(quiet=quiet):
@@ -208,7 +329,7 @@ class ThetaConnectionManager:
             return False
     
     def _kill_existing_processes(self, quiet: bool = False) -> None:
-        """Kill any existing ThetaTerminal processes."""
+        """Kill any existing ThetaTerminal processes and wait for port to be free."""
         processes_to_kill = []
         
         # First, identify all ThetaTerminal processes
@@ -216,38 +337,67 @@ class ThetaConnectionManager:
             try:
                 if proc.info['name'] and 'java' in proc.info['name'].lower():
                     cmdline = proc.info.get('cmdline', [])
-                    if any('ThetaTerminal.jar' in str(arg) for arg in cmdline):
+                    if any('ThetaTerminal' in str(arg) for arg in cmdline):
                         processes_to_kill.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
         if not processes_to_kill:
+            if not quiet:
+                print("🔍 No existing ThetaTerminal processes found")
             return
+        
+        if not quiet:
+            print(f"🧹 Found {len(processes_to_kill)} ThetaTerminal processes to terminate")
         
         # Attempt graceful termination first
         for proc in processes_to_kill:
             try:
                 if not quiet:
-                    print(f"🔄 Terminating existing ThetaTerminal (PID: {proc.pid})")
+                    print(f"🔄 Gracefully terminating ThetaTerminal (PID: {proc.pid})")
                 proc.terminate()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
         # Wait for graceful termination
-        time.sleep(3)
+        if not quiet:
+            print("⏳ Waiting for graceful termination...")
+        time.sleep(5)  # Increased wait time for graceful shutdown
         
         # Force kill any remaining processes
+        remaining_processes = []
         for proc in processes_to_kill:
             try:
                 if proc.is_running():
-                    if not quiet:
-                        print(f"💀 Force killing stubborn ThetaTerminal (PID: {proc.pid})")
-                    proc.kill()
+                    remaining_processes.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
-        # Final wait to ensure cleanup
-        time.sleep(1)
+        if remaining_processes:
+            if not quiet:
+                print(f"💀 Force killing {len(remaining_processes)} stubborn processes")
+            for proc in remaining_processes:
+                try:
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        
+        # Wait for port to become available
+        if not quiet:
+            print(f"🔌 Waiting for port {self.port} to be released...")
+        if not self._wait_for_port_free(self.port, max_wait=10, quiet=quiet):
+            if not quiet:
+                print(f"⚠️  Port {self.port} still in use, attempting force cleanup...")
+            # Force kill any remaining processes using the port
+            if self._force_kill_port_users(self.port, quiet=quiet):
+                if not quiet:
+                    print(f"✅ Port {self.port} forcefully freed")
+            else:
+                if not quiet:
+                    print(f"❌ Could not free port {self.port}")
+        else:
+            if not quiet:
+                print(f"✅ Port {self.port} is now available")
     
     def cleanup(self) -> None:
         """Clean up resources and terminate processes."""
@@ -278,11 +428,64 @@ class ThetaConnectionManager:
         return {
             "process_running": self._is_theta_process_running(),
             "api_connected": self._check_api_connection(),
+            "port_in_use": self._is_port_in_use(self.port),
             "jar_exists": self.jar_path.exists(),
             "env_exists": self.env_path.exists(),
             "credentials_set": bool(self.username and self.password),
-            "creds_file_exists": creds_file.exists()
+            "creds_file_exists": creds_file.exists(),
+            "port": self.port,
+            "api_base": self.api_base
         }
+    
+    def force_restart(self, quiet: bool = False) -> bool:
+        """Force a complete restart of ThetaTerminal."""
+        if not quiet:
+            print("🔄 Forcing complete ThetaTerminal restart...")
+        
+        # Clean up any existing processes
+        self._kill_existing_processes(quiet=quiet)
+        
+        # Clean up our own process reference
+        if self.process:
+            self.process = None
+        
+        # Wait for full cleanup
+        if not quiet:
+            print("⏳ Waiting for complete cleanup...")
+        time.sleep(5)
+        
+        # Start fresh
+        return self.connect(quiet=quiet)
+    
+    def diagnose_issues(self, quiet: bool = False) -> Dict[str, str]:
+        """Diagnose common connection issues and provide recommendations."""
+        issues = {}
+        status = self.get_status()
+        
+        if not status["jar_exists"]:
+            issues["jar_missing"] = f"ThetaTerminalv3.jar not found at {self.jar_path}"
+        
+        if not status["credentials_set"]:
+            issues["credentials_missing"] = "THETADATA_USERNAME or THETADATA_PASSWORD not set in .env"
+        
+        if status["port_in_use"] and not status["api_connected"]:
+            issues["port_conflict"] = f"Port {self.port} is in use but API is not responding"
+        
+        if status["process_running"] and not status["api_connected"]:
+            issues["unresponsive_process"] = "ThetaTerminal process is running but not responding to API calls"
+        
+        if not status["process_running"] and status["port_in_use"]:
+            issues["zombie_port"] = f"Port {self.port} is in use but no ThetaTerminal process found"
+        
+        if not issues:
+            issues["status"] = "No issues detected"
+        
+        if not quiet:
+            print("🔍 ThetaTerminal Diagnostics:")
+            for issue_type, description in issues.items():
+                print(f"  - {issue_type}: {description}")
+        
+        return issues
 
 
 # Global connection manager instance
@@ -305,6 +508,26 @@ def ensure_theta_terminal_connected(quiet: bool = False) -> bool:
     """
     manager = get_connection_manager()
     return manager.connect(quiet=quiet)
+
+
+def force_restart_theta_terminal(quiet: bool = False) -> bool:
+    """
+    Force a complete restart of ThetaTerminal.
+    
+    Use this when experiencing persistent connection issues.
+    """
+    manager = get_connection_manager()
+    return manager.force_restart(quiet=quiet)
+
+
+def diagnose_theta_terminal(quiet: bool = False) -> Dict[str, str]:
+    """
+    Diagnose ThetaTerminal connection issues.
+    
+    Returns a dictionary of detected issues and recommendations.
+    """
+    manager = get_connection_manager()
+    return manager.diagnose_issues(quiet=quiet)
 
 
 def cleanup_theta_terminal() -> None:
