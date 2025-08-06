@@ -307,3 +307,9 @@ The platform includes comprehensive testing capabilities:
 - Production-ready reliability for unattended operation
 
 The platform is production-ready for comprehensive LEAPS and PMCC strategy analysis with institutional-grade data accuracy, robust connection management, and comprehensive troubleshooting capabilities.
+
+## 9. System Memories
+
+### Startup and Connection Management
+- Run "nohup java -jar ThetaTerminalv3.jar --creds-file creds.txt > theta_terminal.log 2>&1 &" to start thetaterminal in the background
+- Use "lsof -ti:25503 | xargs kill" to kill the thetaterminal, but when using Gemini CLI, don't kill the Gemini CLI process.

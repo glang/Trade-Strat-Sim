@@ -27,3 +27,6 @@ gitpush.sh
 
 # macOS system files
 .DS_Store
+
+# ThetaData library files
+lib/
