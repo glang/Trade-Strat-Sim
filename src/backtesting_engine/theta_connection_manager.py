@@ -176,54 +176,45 @@ class ThetaConnectionManager:
         return creds_file
     
     def _start_theta_process(self, quiet: bool = False) -> bool:
-        """Start ThetaTerminal process."""
+        """Start ThetaTerminal process in background using documented command."""
         if not quiet:
-            print("🚀 Starting ThetaTerminal process...")
+            print("🚀 Starting ThetaTerminal process in background...")
         
         try:
-            # Ensure port is free before starting
-            if self._is_port_in_use(self.port):
+            # Check if already running first
+            if self._is_port_in_use(self.port) and self._check_api_connection():
                 if not quiet:
-                    print(f"⚠️  Port {self.port} is still in use, cleaning up...")
-                self._kill_existing_processes(quiet=quiet)
-                
-                # Final check - if still occupied, try force cleanup
-                if self._is_port_in_use(self.port):
-                    if not quiet:
-                        print(f"🔧 Attempting emergency port cleanup...")
-                    if not self._force_kill_port_users(self.port, quiet=quiet):
-                        if not quiet:
-                            print(f"❌ Cannot start: Port {self.port} is still occupied")
-                        return False
+                    print("✅ ThetaTerminal already running and responsive")
+                return True
             
             # Create credentials file for ThetaTerminalv3
             creds_file = self._create_credentials_file()
             
-            # Enhanced startup with better error handling
-            startup_env = os.environ.copy()
-            startup_env['JAVA_OPTS'] = '-Xmx2g -XX:+UseG1GC'  # Optimize JVM settings
+            # Use the documented background command from CLAUDE.md
+            # nohup java -jar ThetaTerminalv3.jar --creds-file creds.txt > theta_terminal.log 2>&1 &
+            log_file = self.project_root / "theta_terminal.log"
             
-            # Start process with credentials file
+            # Execute the background command via shell to properly handle nohup
+            cmd_str = f"nohup java -jar {self.jar_path} --creds-file {creds_file} > {log_file} 2>&1 &"
+            
+            if not quiet:
+                print(f"   Command: {cmd_str}")
+            
+            # Start process in background using shell execution
             self.process = subprocess.Popen(
-                ["java", "-jar", str(self.jar_path), "--creds-file", str(creds_file)],
+                cmd_str,
+                shell=True,
                 cwd=self.project_root,
-                stdout=subprocess.DEVNULL if quiet else None,
-                stderr=subprocess.DEVNULL if quiet else None,
-                env=startup_env,
-                preexec_fn=os.setsid  # Create new process group
+                start_new_session=True  # Detach from parent session
             )
             
             # Give process a moment to start
-            time.sleep(2)
+            time.sleep(3)
             
-            # Verify process is still running
-            if self.process.poll() is not None:
-                if not quiet:
-                    print(f"❌ ThetaTerminal process terminated immediately (exit code: {self.process.returncode})")
-                return False
-            
+            # Don't check process status since it's running in background/detached
+            # Instead, check if port becomes available
             if not quiet:
-                print(f"✅ ThetaTerminal process started successfully (PID: {self.process.pid})")
+                print(f"✅ ThetaTerminal background process started, logs at: {log_file}")
             
             return True
             
@@ -243,12 +234,8 @@ class ThetaConnectionManager:
         connection_attempts = 0
         
         while time.time() - start_time < max_wait:
-            # Check if process died
-            if self.process and self.process.poll() is not None:
-                if not quiet:
-                    print("❌ ThetaTerminal process terminated unexpectedly")
-                    print(f"   Exit code: {self.process.returncode}")
-                return False
+            # For background processes started with nohup, don't check process status
+            # since we lose track of the actual process. Instead, rely on port and API checks.
             
             # Check API connection with progressive timeout
             connection_attempts += 1
@@ -263,7 +250,8 @@ class ThetaConnectionManager:
             elapsed = time.time() - start_time
             if not quiet and elapsed - last_status_time >= 10:
                 port_status = "in use" if self._is_port_in_use(self.port) else "free"
-                print(f"⏳ Still waiting... ({elapsed:.0f}s elapsed, port {self.port}: {port_status})")
+                process_status = "running" if self._is_theta_process_running() else "not found"
+                print(f"⏳ Still waiting... ({elapsed:.0f}s elapsed, port {self.port}: {port_status}, process: {process_status})")
                 last_status_time = elapsed
             
             time.sleep(check_interval)
@@ -273,8 +261,6 @@ class ThetaConnectionManager:
             # Diagnostic information
             print(f"   Port {self.port} status: {'in use' if self._is_port_in_use(self.port) else 'free'}")
             print(f"   Process running: {self._is_theta_process_running()}")
-            if self.process:
-                print(f"   Process status: {'running' if self.process.poll() is None else 'terminated'}")
         return False
     
     def connect(self, quiet: bool = False) -> bool:
@@ -297,26 +283,21 @@ class ThetaConnectionManager:
             # Check if process is running but not connected yet
             if self._is_theta_process_running():
                 if not quiet:
-                    print("🔄 ThetaTerminal process found, checking if responsive...")
+                    print("🔄 ThetaTerminal process found, waiting for connection...")
                 
-                # Give existing process a brief chance to connect (only 15 seconds)
-                # If it doesn't connect quickly, assume it's stale
-                if self._wait_for_connection(max_wait=15, quiet=True):
+                # Give existing process time to connect (up to 60 seconds)
+                # We don't kill existing processes anymore - let them run
+                if self._wait_for_connection(max_wait=60, quiet=quiet):
                     if not quiet:
                         print("✅ Existing ThetaTerminal process connected successfully!")
                     return True
                 else:
                     if not quiet:
-                        print("⚠️  Existing process appears stale, cleaning up and restarting...")
-                    # Process exists but won't connect - it's stale, kill it
-                    self._kill_existing_processes(quiet=quiet)
-                    
-                    # Extra safety: wait a bit more for full cleanup
-                    if not quiet:
-                        print("🧹 Ensuring complete cleanup...")
-                    time.sleep(3)
+                        print("⚠️  Existing process not responding, but leaving it running")
+                        print("    You may want to manually check ThetaTerminal status")
+                    return False
             
-            # Start new process
+            # Start new process only if none is running
             if not self._start_theta_process(quiet=quiet):
                 return False
             
@@ -400,23 +381,14 @@ class ThetaConnectionManager:
                 print(f"✅ Port {self.port} is now available")
     
     def cleanup(self) -> None:
-        """Clean up resources and terminate processes."""
+        """Clean up resources without terminating ThetaTerminal processes."""
+        # Note: We intentionally do NOT kill ThetaTerminal processes
+        # ThetaTerminal should remain running in the background for other scripts
+        # Only clean up our local process reference
         if self.process:
-            try:
-                # Terminate process group
-                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-                self.process.wait(timeout=5)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                try:
-                    # Force kill if necessary
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            finally:
-                self.process = None
+            self.process = None
         
-        # Note: We no longer auto-delete creds.txt to allow persistent credentials
-        # Users can manually delete creds.txt if they want temporary credentials
+        # Note: We do not delete creds.txt to allow persistent credentials
     
     def is_connected(self) -> bool:
         """Check if ThetaTerminal is currently connected."""
@@ -438,23 +410,19 @@ class ThetaConnectionManager:
         }
     
     def force_restart(self, quiet: bool = False) -> bool:
-        """Force a complete restart of ThetaTerminal."""
+        """Force a connection attempt without killing existing processes."""
         if not quiet:
-            print("🔄 Forcing complete ThetaTerminal restart...")
+            print("🔄 Attempting fresh ThetaTerminal connection...")
         
-        # Clean up any existing processes
-        self._kill_existing_processes(quiet=quiet)
-        
-        # Clean up our own process reference
+        # Clean up our own process reference only
         if self.process:
             self.process = None
         
-        # Wait for full cleanup
         if not quiet:
-            print("⏳ Waiting for complete cleanup...")
-        time.sleep(5)
+            print("⚠️  Note: This no longer kills existing ThetaTerminal processes")
+            print("    Use 'lsof -ti:25503 | xargs kill' manually if needed")
         
-        # Start fresh
+        # Attempt to connect
         return self.connect(quiet=quiet)
     
     def diagnose_issues(self, quiet: bool = False) -> Dict[str, str]:
@@ -531,13 +499,13 @@ def diagnose_theta_terminal(quiet: bool = False) -> Dict[str, str]:
 
 
 def cleanup_theta_terminal() -> None:
-    """Clean up ThetaTerminal resources."""
+    """Clean up ThetaTerminal resources without killing processes."""
     global _connection_manager
     if _connection_manager:
         _connection_manager.cleanup()
         _connection_manager = None
 
 
-# Ensure cleanup on module exit
+# Register cleanup on module exit (but won't kill ThetaTerminal)
 import atexit
 atexit.register(cleanup_theta_terminal)

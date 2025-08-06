@@ -312,4 +312,6 @@ The platform is production-ready for comprehensive LEAPS and PMCC strategy analy
 
 ### Startup and Connection Management
 - Run "nohup java -jar ThetaTerminalv3.jar --creds-file creds.txt > theta_terminal.log 2>&1 &" to start thetaterminal in the background
-- Use "lsof -ti:25503 | xargs kill" to kill the thetaterminal, but when using Gemini CLI, don't kill the Gemini CLI process.
+- Use "lsof -ti:25503 | xargs kill" to kill the thetaterminal, but when using Gemini CLI, don't kill the Gemini CLI process
+- Scripts now use background ThetaTerminal and do NOT kill it when finished - ThetaTerminal persists for reuse
+- Connection manager checks for existing processes and connects to them rather than killing/restarting

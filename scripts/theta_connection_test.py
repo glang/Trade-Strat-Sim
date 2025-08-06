@@ -82,27 +82,34 @@ def diagnose_connection():
 
 
 def force_restart():
-    """Force restart ThetaTerminal."""
-    print("🔄 Force Restarting ThetaTerminal")
+    """Attempt fresh ThetaTerminal connection."""
+    print("🔄 Attempting Fresh ThetaTerminal Connection")
     print("=" * 50)
+    print("⚠️  Note: This no longer kills existing processes")
+    print("    Use 'lsof -ti:25503 | xargs kill' manually if needed")
+    print()
     
     success = force_restart_theta_terminal(quiet=False)
     
     if success:
-        print("\n✅ ThetaTerminal restart successful")
+        print("\n✅ ThetaTerminal connection successful")
     else:
-        print("\n❌ ThetaTerminal restart failed")
+        print("\n❌ ThetaTerminal connection failed")
     
     return success
 
 
 def cleanup():
-    """Clean up ThetaTerminal resources."""
-    print("🧹 Cleaning up ThetaTerminal")
+    """Clean up ThetaTerminal resources without killing processes."""
+    print("🧹 Cleaning up ThetaTerminal Resources")
     print("=" * 50)
+    print("⚠️  Note: This no longer kills ThetaTerminal processes")
+    print("    ThetaTerminal will remain running in background")
+    print("    Use 'lsof -ti:25503 | xargs kill' manually if needed")
+    print()
     
     cleanup_theta_terminal()
-    print("✅ Cleanup completed")
+    print("✅ Resource cleanup completed (processes still running)")
 
 
 def show_status():
@@ -124,7 +131,7 @@ def main():
 Examples:
   python3 scripts/theta_connection_test.py --test        # Test connection
   python3 scripts/theta_connection_test.py --diagnose   # Diagnose issues  
-  python3 scripts/theta_connection_test.py --restart    # Force restart
+  python3 scripts/theta_connection_test.py --restart    # Attempt fresh connection
   python3 scripts/theta_connection_test.py --cleanup    # Clean up resources
   python3 scripts/theta_connection_test.py --status     # Show detailed status
         """
@@ -135,7 +142,7 @@ Examples:
     parser.add_argument('--diagnose', action='store_true',
                        help='Diagnose connection issues')
     parser.add_argument('--restart', action='store_true',
-                       help='Force restart ThetaTerminal')
+                       help='Attempt fresh ThetaTerminal connection')
     parser.add_argument('--cleanup', action='store_true',
                        help='Clean up ThetaTerminal resources')
     parser.add_argument('--status', action='store_true',
